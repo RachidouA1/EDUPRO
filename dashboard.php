@@ -41,27 +41,35 @@ if ($showPedagogie) {
 
 // ===== Données coordinateur =====
 if ($role === 'coordinateur') {
-    $coordFiliereId = getCoordinateurFiliereId();
-    $coordFiliere = null;
-    if ($coordFiliereId) {
-        $cf = $db->prepare("SELECT * FROM filieres WHERE id=?");
-        $cf->execute([$coordFiliereId]);
-        $coordFiliere = $cf->fetch();
-    }
-    $coordStats = [];
-    if ($coordFiliereId) {
-        $cs = $db->prepare("SELECT COUNT(*) FROM etudiants WHERE filiere_id=? AND statut='actif'");
-        $cs->execute([$coordFiliereId]);
-        $coordStats['etudiants'] = $cs->fetchColumn();
-        $cs2 = $db->prepare("SELECT COUNT(*) FROM matieres WHERE filiere_id=? AND actif=1");
-        $cs2->execute([$coordFiliereId]);
-        $coordStats['matieres'] = $cs2->fetchColumn();
-    }
+    $coordSections = getCoordinateurSections();
+    $coordStats    = ['etudiants' => 0, 'matieres' => 0, 'sections' => count($coordSections)];
     $coordRecentEtudiants = [];
-    if ($coordFiliereId) {
-        $cre = $db->prepare("SELECT e.*, n.nom as niveau_nom FROM etudiants e LEFT JOIN niveaux n ON n.id=e.niveau_id WHERE e.filiere_id=? AND e.statut='actif' ORDER BY e.created_at DESC LIMIT 5");
-        $cre->execute([$coordFiliereId]);
-        $coordRecentEtudiants = $cre->fetchAll();
+
+    if (!empty($coordSections)) {
+        $cwParams = [];
+        $coordWhere = coordSectionWhere('e', $cwParams);
+
+        $csStmt = $db->prepare("SELECT COUNT(*) FROM etudiants e WHERE e.statut='actif' AND $coordWhere");
+        $csStmt->execute($cwParams);
+        $coordStats['etudiants'] = (int)$csStmt->fetchColumn();
+
+        $filiereIds   = array_values(array_unique(array_map(fn($s) => (int)$s['filiere_id'], $coordSections)));
+        $placeholders = implode(',', array_fill(0, count($filiereIds), '?'));
+        $cmStmt = $db->prepare("SELECT COUNT(*) FROM matieres WHERE filiere_id IN ($placeholders) AND actif=1");
+        $cmStmt->execute($filiereIds);
+        $coordStats['matieres'] = (int)$cmStmt->fetchColumn();
+
+        $creParams = $cwParams;
+        $creStmt = $db->prepare("
+            SELECT e.*, f.nom as filiere_nom, f.code as filiere_code, n.nom as niveau_nom
+            FROM etudiants e
+            LEFT JOIN filieres f ON f.id = e.filiere_id
+            LEFT JOIN niveaux  n ON n.id = e.niveau_id
+            WHERE e.statut='actif' AND $coordWhere
+            ORDER BY e.created_at DESC LIMIT 5
+        ");
+        $creStmt->execute($creParams);
+        $coordRecentEtudiants = $creStmt->fetchAll();
     }
 }
 
@@ -414,17 +422,30 @@ include APP_ROOT . '/includes/header.php';
   <div class="col-12">
     <div class="card" style="border-left:4px solid #2e7d32">
       <div class="card-body">
-        <div class="d-flex align-items-center gap-3">
+        <div class="d-flex align-items-start gap-3">
           <div class="avatar-circle" style="background:#2e7d32;width:52px;height:52px;font-size:1.2rem;flex-shrink:0">
             <i class="fas fa-sitemap"></i>
           </div>
-          <div>
-            <h5 class="mb-0 fw-bold"><?= h(($user['prenom']??'').' '.($user['nom']??'')) ?></h5>
-            <?php if ($coordFiliere ?? null): ?>
-              <div class="text-muted">Coordinateur — <?= h($coordFiliere['code']) ?> : <?= h($coordFiliere['nom']) ?></div>
+          <div class="flex-grow-1">
+            <h5 class="mb-1 fw-bold"><?= h(($user['prenom']??'').' '.($user['nom']??'')) ?></h5>
+            <div class="text-muted mb-2" style="font-size:.85rem">Coordinateur de section</div>
+            <?php if (!empty($coordSections)): ?>
+              <div class="d-flex flex-wrap gap-2">
+                <?php foreach ($coordSections as $s): ?>
+                  <span class="badge" style="background:#e8f5e9;color:#1b5e20;border:1px solid #a5d6a7;font-size:.8rem;font-weight:500;padding:.4em .75em">
+                    <i class="fas fa-layer-group me-1" style="opacity:.7"></i>
+                    <strong><?= h($s['filiere_code']) ?></strong>
+                    <?= $s['niveau_nom'] ? ' &mdash; ' . h($s['niveau_nom']) : ' <em style="opacity:.7">(tous niveaux)</em>' ?>
+                  </span>
+                <?php endforeach; ?>
+              </div>
             <?php else: ?>
-              <div class="text-warning">Aucune filière associée à ce compte.</div>
+              <div class="text-warning fs-sm"><i class="fas fa-exclamation-triangle me-1"></i>Aucune section assignée à ce compte.</div>
             <?php endif; ?>
+          </div>
+          <div class="text-end">
+            <div class="fw-bold text-success" style="font-size:1.6rem"><?= $coordStats['sections'] ?></div>
+            <div class="text-muted" style="font-size:.75rem">section(s)</div>
           </div>
         </div>
       </div>
@@ -437,7 +458,7 @@ include APP_ROOT . '/includes/header.php';
     <div class="stat-card stat-green">
       <div class="stat-icon"><i class="fas fa-user-graduate"></i></div>
       <div class="stat-body">
-        <div class="stat-value"><?= number_format($coordStats['etudiants'] ?? 0) ?></div>
+        <div class="stat-value"><?= number_format($coordStats['etudiants']) ?></div>
         <div class="stat-label">Étudiants actifs</div>
       </div>
     </div>
@@ -446,17 +467,17 @@ include APP_ROOT . '/includes/header.php';
     <div class="stat-card stat-blue">
       <div class="stat-icon"><i class="fas fa-book-open"></i></div>
       <div class="stat-body">
-        <div class="stat-value"><?= number_format($coordStats['matieres'] ?? 0) ?></div>
+        <div class="stat-value"><?= number_format($coordStats['matieres']) ?></div>
         <div class="stat-label">Matières actives</div>
       </div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="stat-card stat-purple">
-      <div class="stat-icon"><i class="fas fa-clock"></i></div>
+    <div class="stat-card" style="background:linear-gradient(135deg,#1b5e20,#2e7d32)">
+      <div class="stat-icon"><i class="fas fa-sitemap"></i></div>
       <div class="stat-body">
-        <div class="stat-value"><?= number_format($stats['paiements_attente'] ?? 0) ?></div>
-        <div class="stat-label">Paiements en attente</div>
+        <div class="stat-value"><?= number_format($coordStats['sections']) ?></div>
+        <div class="stat-label">Sections gérées</div>
       </div>
     </div>
   </div>
@@ -475,23 +496,26 @@ include APP_ROOT . '/includes/header.php';
   <div class="col-12 col-lg-7">
     <div class="card">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="fas fa-user-graduate me-2 text-success"></i>Étudiants de ma section</span>
+        <span><i class="fas fa-user-graduate me-2 text-success"></i>Étudiants de mes sections</span>
         <a href="<?= APP_URL ?>/modules/etudiants/index.php" class="btn btn-sm btn-outline-success">Voir tout</a>
       </div>
       <div class="table-responsive">
         <table class="table mb-0">
-          <thead><tr><th>Matricule</th><th>Nom & Prénom</th><th>Niveau</th><th>Statut</th></tr></thead>
+          <thead><tr><th>Matricule</th><th>Nom & Prénom</th><th>Filière / Niveau</th><th>Statut</th></tr></thead>
           <tbody>
             <?php foreach ($coordRecentEtudiants as $e): ?>
             <tr>
-              <td><code><?= h($e['matricule']) ?></code></td>
+              <td><code class="fs-sm"><?= h($e['matricule']) ?></code></td>
               <td><?= h($e['nom'].' '.$e['prenom']) ?></td>
-              <td><span class="badge bg-primary bg-opacity-10 text-primary"><?= h($e['niveau_nom']??'-') ?></span></td>
-              <td><?php $sc=['actif'=>'success','transfere'=>'warning','exclu'=>'danger','diplome'=>'info'][$e['statut']]??'secondary'; ?>
+              <td>
+                <div class="fw-600 fs-sm"><?= h($e['filiere_code'] ?? '-') ?></div>
+                <div class="text-muted fs-sm"><?= h($e['niveau_nom'] ?? '-') ?></div>
+              </td>
+              <td><?php $sc=['actif'=>'success','transfere'=>'warning','exclu'=>'danger','diplome'=>'info'][$e['statut']] ?? 'secondary'; ?>
                 <span class="badge bg-<?= $sc ?>"><?= ucfirst(h($e['statut'])) ?></span></td>
             </tr>
             <?php endforeach; ?>
-            <?php if (empty($coordRecentEtudiants)): ?><tr><td colspan="4" class="text-center text-muted py-3">Aucun étudiant</td></tr><?php endif; ?>
+            <?php if (empty($coordRecentEtudiants)): ?><tr><td colspan="4" class="text-center text-muted py-3">Aucun étudiant trouvé</td></tr><?php endif; ?>
           </tbody>
         </table>
       </div>
