@@ -7,7 +7,7 @@
 
 ## Présentation du projet
 
-**SCO-EPSI** est un système de gestion scolaire web destiné à l'**École Privée de Santé Ibn Rochd (EPSI)** au Sénégal. Il couvre la gestion des étudiants, des enseignants, des notes, des bulletins, de la comptabilité et de l'administration.
+**SCO-EPSI** est un système de gestion scolaire web destiné à l'**École Privée de Santé Ibn Rochd (EPSI)**, située à **Tahoua**, région de Tahoua, **Niger**. Il couvre la gestion des étudiants, des enseignants, des notes, des bulletins, de la comptabilité et de l'administration.
 
 - Base URL locale : `http://localhost/SCO-EPSI`
 - Point d'entrée : `index.php` (login) → `dashboard.php`
@@ -33,7 +33,7 @@
 
 ### Serveur / Environnement
 - **XAMPP** (Apache + MySQL + PHP) sur Windows
-- **Fuseau horaire** : Africa/Dakar
+- **Fuseau horaire** : Africa/Niamey
 - **Encodage** : UTF-8 MB4
 
 ---

@@ -6,7 +6,7 @@ define('APP_ROOT',     dirname(__DIR__));
 define('ASSETS_URL',   APP_URL . '/assets');
 define('APP_VERSION',  '1.0.0');
 
-date_default_timezone_set('Africa/Dakar');
+date_default_timezone_set('Africa/Niamey');
 
 if (session_status() === PHP_SESSION_NONE) {
     ini_set('session.cookie_httponly', '1');
