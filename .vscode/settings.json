@@ -1,0 +1,5 @@
+{
+    "claudeCode.allowDangerouslySkipPermissions": true,
+    "claudeCode.useTerminal": true,
+    "chat.tools.terminal.terminalProfile.windows": {}
+}

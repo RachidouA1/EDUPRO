@@ -1,0 +1,561 @@
+<?php
+require_once __DIR__ . '/../../config/config.php';
+requireLogin();
+requireRole(['admin', 'enseignant', 'scolarite', 'coordinateur']);
+
+$db   = getDB();
+$user = getCurrentUser();
+
+// Runtime migrations
+try { $db->exec("ALTER TABLE notes    ADD COLUMN session        TINYINT     NOT NULL DEFAULT 1"); } catch (PDOException $e) {}
+try { $db->exec("ALTER TABLE matieres ADD COLUMN formule_calcul VARCHAR(20) NOT NULL DEFAULT 'pondere'"); } catch (PDOException $e) {}
+try { $db->exec("ALTER TABLE notes MODIFY COLUMN semestre_id INT NULL"); } catch (PDOException $e) {}
+
+$anneeId    = (int)($_GET['annee_id']    ?? getActiveAnnee()['id'] ?? 0);
+$semestreId = (int)($_GET['semestre_id'] ?? 0);
+$matiereId  = (int)($_GET['matiere_id']  ?? 0);
+$sessionNum = (int)($_GET['session']     ?? 1);
+if (!in_array($sessionNum, [1, 2])) $sessionNum = 1;
+$errors = [];
+$saved  = 0;
+
+$NO_SEM_CODES = ['ASB', 'VP'];
+
+// Filières sans CC : toujours examen seul
+$EXAM_ONLY_CODES = ['ASB', 'VP'];
+
+function calcFin(?float $cc, ?float $exam, string $f): ?float {
+    if ($exam === null) return null;
+    if ($f === 'pondere' && $cc !== null) {
+        return round($cc * 0.4 + $exam * 0.6, 2);
+    }
+    if ($f === 'demi_somme' && $cc !== null) {
+        return round(($cc + $exam) / 2, 2);
+    }
+    return $exam;
+}
+
+function effectiveFormule(string $fCode, string $matFormule): string {
+    global $EXAM_ONLY_CODES;
+    if (in_array(strtoupper($fCode), $EXAM_ONLY_CODES)) {
+        return 'exam_seul';
+    }
+    return in_array($matFormule, ['pondere', 'demi_somme', 'exam_seul']) ? $matFormule : 'pondere';
+}
+
+// ── Save notes ───────────────────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['notes'])) {
+    if (!verifyCsrfToken($_POST['csrf'] ?? '')) {
+        $errors[] = 'Jeton invalide.';
+    } else {
+        $mId     = (int)($_POST['matiere_id']    ?? 0);
+        $aId     = (int)($_POST['annee_id']      ?? 0);
+        $sId     = (int)($_POST['semestre_id']   ?? 0) ?: null;
+        $sessId  = (int)($_POST['session']       ?? 1);
+        if (!in_array($sessId, [1, 2])) $sessId = 1;
+        $formule = in_array($_POST['formule_calcul'] ?? '', ['pondere','demi_somme','exam_seul'])
+                   ? $_POST['formule_calcul'] : 'pondere';
+
+        foreach ($_POST['notes'] as $etuId => $noteData) {
+            $cc   = ($noteData['cc']   ?? '') === '' ? null : min(20, max(0, (float)$noteData['cc']));
+            $exam = ($noteData['exam'] ?? '') === '' ? null : min(20, max(0, (float)$noteData['exam']));
+            $fin  = calcFin($cc, $exam, $formule);
+
+            if ($sId === null) {
+                $check = $db->prepare("SELECT id FROM notes WHERE etudiant_id=? AND matiere_id=? AND annee_id=? AND semestre_id IS NULL AND session=?");
+                $check->execute([(int)$etuId, $mId, $aId, $sessId]);
+            } else {
+                $check = $db->prepare("SELECT id FROM notes WHERE etudiant_id=? AND matiere_id=? AND annee_id=? AND semestre_id=? AND session=?");
+                $check->execute([(int)$etuId, $mId, $aId, $sId, $sessId]);
+            }
+            $existing = $check->fetchColumn();
+
+            if ($existing) {
+                $db->prepare("UPDATE notes SET note_cc=?,note_exam=?,note_finale=?,updated_at=NOW() WHERE id=?")
+                   ->execute([$cc, $exam, $fin, $existing]);
+            } else {
+                $db->prepare("INSERT INTO notes (etudiant_id,matiere_id,annee_id,semestre_id,session,note_cc,note_exam,note_finale) VALUES (?,?,?,?,?,?,?,?)")
+                   ->execute([(int)$etuId, $mId, $aId, $sId, $sessId, $cc, $exam, $fin]);
+            }
+            $saved++;
+        }
+        setFlash('success', "$saved note(s) enregistrée(s) — Session $sessId.");
+        redirect("/modules/pedagogique/notes.php?annee_id={$aId}&semestre_id={$sId}&matiere_id={$mId}&session={$sessId}");
+    }
+}
+
+// ── Build matière list ────────────────────────────────────────────────────────
+$mQuery = "SELECT m.*, f.nom as filiere_nom, f.code as filiere_code, n.nom as niveau_nom
+           FROM matieres m
+           LEFT JOIN filieres f ON f.id=m.filiere_id
+           LEFT JOIN niveaux  n ON n.id=m.niveau_id
+           WHERE m.actif=1";
+$mParams = [];
+if ($user['role'] === 'enseignant') {
+    $mQuery  .= " AND m.enseignant_id IN (SELECT id FROM enseignants WHERE email=?)";
+    $mParams[] = $user['email'];
+} elseif ($user['role'] === 'coordinateur') {
+    $mQuery  .= " AND m.filiere_id = ?";
+    $mParams[] = getCoordinateurFiliereId();
+}
+$mQuery .= " ORDER BY f.nom, n.ordre, m.nom";
+$mStmt = $db->prepare($mQuery);
+$mStmt->execute($mParams);
+$matieres = $mStmt->fetchAll();
+
+// ── Semestre logic (ASB/VP = no semestre) ────────────────────────────────────
+$matiereCodeMap = [];
+foreach ($matieres as $_m) { $matiereCodeMap[$_m['id']] = strtoupper($_m['filiere_code'] ?? ''); }
+
+$needsSemestre = true;
+if ($matiereId && isset($matiereCodeMap[$matiereId])) {
+    $needsSemestre = !in_array($matiereCodeMap[$matiereId], $NO_SEM_CODES);
+}
+if (!$needsSemestre) $semestreId = 0;
+
+// ── Load selected matière data ────────────────────────────────────────────────
+$selectedMatiere = null;
+$etudiants       = [];
+$existingNotes   = [];
+$prevNotes       = [];   // Session 1 reference when viewing Session 2
+$activeFormule   = 'pondere';
+
+if ($matiereId && $anneeId && (!$needsSemestre || $semestreId)) {
+    $smStmt = $db->prepare("
+        SELECT m.*, f.nom as filiere_nom, f.code as filiere_code, n.id as niv_id, n.nom as niveau_nom
+        FROM matieres m
+        LEFT JOIN filieres f ON f.id=m.filiere_id
+        LEFT JOIN niveaux  n ON n.id=m.niveau_id
+        WHERE m.id=?
+    ");
+    $smStmt->execute([$matiereId]);
+    $selectedMatiere = $smStmt->fetch();
+
+    if ($selectedMatiere) {
+        $activeFormule = effectiveFormule(
+            $selectedMatiere['filiere_code'] ?? '',
+            $selectedMatiere['formule_calcul'] ?? 'pondere'
+        );
+
+        $eStmt = $db->prepare("
+            SELECT e.id, e.nom, e.prenom, e.matricule, e.sexe
+            FROM etudiants e
+            WHERE e.filiere_id=? AND e.niveau_id=? AND e.annee_id=? AND e.statut='actif'
+            ORDER BY e.nom, e.prenom
+        ");
+        $eStmt->execute([$selectedMatiere['filiere_id'], $selectedMatiere['niveau_id'], $anneeId]);
+        $etudiants = $eStmt->fetchAll();
+
+        // Notes for the current session (semestre_id IS NULL pour ASB/VP)
+        if ($semestreId) {
+            $nStmt = $db->prepare("SELECT * FROM notes WHERE matiere_id=? AND annee_id=? AND semestre_id=? AND session=?");
+            $nStmt->execute([$matiereId, $anneeId, $semestreId, $sessionNum]);
+        } else {
+            $nStmt = $db->prepare("SELECT * FROM notes WHERE matiere_id=? AND annee_id=? AND semestre_id IS NULL AND session=?");
+            $nStmt->execute([$matiereId, $anneeId, $sessionNum]);
+        }
+        foreach ($nStmt->fetchAll() as $row) { $existingNotes[$row['etudiant_id']] = $row; }
+
+        // Session 1 reference notes shown alongside Session 2 inputs
+        if ($sessionNum === 2) {
+            if ($semestreId) {
+                $pStmt = $db->prepare("SELECT * FROM notes WHERE matiere_id=? AND annee_id=? AND semestre_id=? AND session=1");
+                $pStmt->execute([$matiereId, $anneeId, $semestreId]);
+            } else {
+                $pStmt = $db->prepare("SELECT * FROM notes WHERE matiere_id=? AND annee_id=? AND semestre_id IS NULL AND session=1");
+                $pStmt->execute([$matiereId, $anneeId]);
+            }
+            foreach ($pStmt->fetchAll() as $row) { $prevNotes[$row['etudiant_id']] = $row; }
+        }
+    }
+}
+
+$annees    = getAnneesAcademiques();
+$semestres = getSemestres($anneeId ?: null);
+
+$pageTitle  = 'Saisie des notes';
+$breadcrumb = ['Pédagogie' => null, 'Notes' => null];
+include APP_ROOT . '/includes/header.php';
+?>
+
+<div class="page-header no-print">
+  <h2><i class="fas fa-edit me-2 text-primary"></i>Saisie des Notes</h2>
+</div>
+
+<!-- ── Filter panel ─────────────────────────────────────────────────────── -->
+<div class="card mb-4 no-print">
+  <div class="card-body">
+    <form method="GET" class="row g-3 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label">Année académique</label>
+        <select name="annee_id" class="form-select" onchange="this.form.submit()">
+          <option value="">-- Sélectionner --</option>
+          <?php foreach ($annees as $a): ?>
+            <option value="<?= $a['id'] ?>" <?= $anneeId == $a['id'] ? 'selected' : '' ?>><?= h($a['libelle']) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+      <div class="col-md-2" id="semestre_filter_col">
+        <label class="form-label">Semestre</label>
+        <select name="semestre_id" id="semestre_id" class="form-select">
+          <option value="">-- Sélectionner --</option>
+          <?php foreach ($semestres as $s): ?>
+            <option value="<?= $s['id'] ?>" <?= $semestreId == $s['id'] ? 'selected' : '' ?>><?= h($s['nom']) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Matière</label>
+        <select name="matiere_id" id="matiere_filter" class="form-select" onchange="onMatiereChange(this)">
+          <option value="">-- Sélectionner --</option>
+          <?php foreach ($matieres as $m): ?>
+            <option value="<?= $m['id'] ?>" <?= $matiereId == $m['id'] ? 'selected' : '' ?>
+              data-filiere-code="<?= h(strtoupper($m['filiere_code'] ?? '')) ?>">
+              <?= h($m['code']) ?> – <?= h($m['nom']) ?> (<?= h($m['filiere_code'] ?? '') ?> <?= h($m['niveau_nom'] ?? '') ?>)
+            </option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Session</label>
+        <select name="session" class="form-select">
+          <option value="1" <?= $sessionNum == 1 ? 'selected' : '' ?>>Session 1</option>
+          <option value="2" <?= $sessionNum == 2 ? 'selected' : '' ?>>Session 2 – Rattrapage</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-primary w-100"><i class="fas fa-search me-1"></i>Charger</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- semestre show/hide + init on page load -->
+<script>
+const NO_SEM_CODES_JS = ['ASB', 'VP'];
+function onMatiereChange(sel) {
+  const opt  = sel ? sel.options[sel.selectedIndex] : null;
+  const code = (opt ? opt.getAttribute('data-filiere-code') || '' : '').toUpperCase();
+  const col  = document.getElementById('semestre_filter_col');
+  if (!col) return;
+  const hide = sel && sel.value !== '' && NO_SEM_CODES_JS.includes(code);
+  col.style.display = hide ? 'none' : '';
+  if (hide) { const s = document.getElementById('semestre_id'); if (s) s.value = ''; }
+}
+document.addEventListener('DOMContentLoaded', function () {
+  const mSel = document.getElementById('matiere_filter');
+  if (mSel) onMatiereChange(mSel);
+});
+</script>
+
+<?php foreach ($errors as $err): ?>
+  <div class="alert alert-danger no-print"><?= h($err) ?></div>
+<?php endforeach; ?>
+
+<?php if ($selectedMatiere && !empty($etudiants)):
+  // Labels for the print header
+  $anneeLabel    = '';
+  foreach ($annees as $_a) { if ($_a['id'] == $anneeId) { $anneeLabel = $_a['libelle']; break; } }
+  $semestreLabel = '';
+  if ($needsSemestre && $semestreId) {
+      foreach ($semestres as $_s) { if ($_s['id'] == $semestreId) { $semestreLabel = $_s['nom']; break; } }
+  }
+  $showS1Ref = ($sessionNum === 2);
+
+  $formuleDefs = [
+      'exam_seul'  => ['label' => 'Examen seul (100 %)',         'html' => '<strong>Examen seul</strong> (100 %)',                          'showCC' => false, 'ccPct' => '',      'examPct' => '100 %'],
+      'pondere'    => ['label' => 'CC 40 % + Examen 60 %',       'html' => '<strong>CC</strong> 40 % + <strong>Examen</strong> 60 %',        'showCC' => true,  'ccPct' => '40 %',  'examPct' => '60 %'],
+      'demi_somme' => ['label' => '(CC + Examen) ÷ 2',           'html' => '<strong>(CC + Examen)</strong> ÷ 2',                            'showCC' => true,  'ccPct' => '50 %',  'examPct' => '50 %'],
+  ];
+  $fd               = $formuleDefs[$activeFormule] ?? $formuleDefs['exam_seul'];
+  $formuleLabel     = $fd['label'];
+  $formuleLabelHtml = $fd['html'];
+  $showCC           = $fd['showCC'];
+  $ccPct            = $fd['ccPct'];
+  $examPct          = $fd['examPct'];
+?>
+
+<!-- ══════════════════ PRINT-ONLY PV ══════════════════ -->
+<div class="print-only">
+  <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:.6rem;margin-bottom:.8rem">
+    <?php $pvLogo = getLogoUrl(); if ($pvLogo): ?>
+      <img src="<?= h($pvLogo) ?>" alt="Logo" style="height:60px;object-fit:contain;margin-bottom:.4rem;display:block;margin-left:auto;margin-right:auto">
+    <?php endif; ?>
+    <div style="font-size:1.3rem;font-weight:700;text-transform:uppercase"><?= h(getParam('etablissement_nom', 'École Privée de Santé Ibn Rochd')) ?></div>
+    <?php $slogan = getParam('etablissement_slogan'); if ($slogan): ?>
+      <div style="font-size:.85rem;color:#555;margin-top:.1rem"><?= h($slogan) ?></div>
+    <?php endif; ?>
+    <div style="font-size:1.1rem;font-weight:600;margin-top:.2rem">PROCÈS-VERBAL DE NOTES — Session <?= $sessionNum ?></div>
+  </div>
+  <table style="width:100%;border-collapse:collapse;font-size:.9rem;margin-bottom:.8rem">
+    <tr>
+      <td style="padding:.2rem .5rem;width:50%"><strong>Matière :</strong> <?= h($selectedMatiere['code']) ?> – <?= h($selectedMatiere['nom']) ?></td>
+      <td style="padding:.2rem .5rem"><strong>Filière :</strong> <?= h($selectedMatiere['filiere_nom'] ?? '') ?></td>
+    </tr>
+    <tr>
+      <td style="padding:.2rem .5rem"><strong>Niveau :</strong> <?= h($selectedMatiere['niveau_nom'] ?? '–') ?></td>
+      <?php if ($needsSemestre && $semestreLabel): ?>
+        <td style="padding:.2rem .5rem"><strong>Semestre :</strong> <?= h($semestreLabel) ?></td>
+      <?php else: ?>
+        <td style="padding:.2rem .5rem"><strong>Année :</strong> <?= h($anneeLabel) ?></td>
+      <?php endif; ?>
+    </tr>
+    <tr>
+      <td style="padding:.2rem .5rem"><strong>Formule :</strong> <?= $formuleLabel ?></td>
+      <td style="padding:.2rem .5rem"><strong>Effectif :</strong> <?= count($etudiants) ?> étudiant(s)</td>
+    </tr>
+    <tr>
+      <td colspan="2" style="padding:.2rem .5rem"><strong>Date :</strong> <?= date('d/m/Y à H:i') ?></td>
+    </tr>
+  </table>
+
+  <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+    <thead>
+      <?php if ($showS1Ref): ?>
+      <tr>
+        <th colspan="3" style="border:1px solid #888;padding:.3rem .4rem"></th>
+        <th colspan="2" style="border:1px solid #888;padding:.3rem .4rem;text-align:center;background:#f0f0f0">Session 1 (référence)</th>
+        <th colspan="3" style="border:1px solid #888;padding:.3rem .4rem;text-align:center;background:#dce8ff">Session 2</th>
+      </tr>
+      <?php endif; ?>
+      <tr style="background:#e8e8e8">
+        <th style="border:1px solid #888;padding:.3rem .4rem;text-align:center">#</th>
+        <th style="border:1px solid #888;padding:.3rem .4rem">Matricule</th>
+        <th style="border:1px solid #888;padding:.3rem .4rem">Nom &amp; Prénom</th>
+        <?php if ($showS1Ref): ?>
+        <th style="border:1px solid #888;padding:.3rem .4rem;text-align:center;background:#f0f0f0">Exam S1</th>
+        <th style="border:1px solid #888;padding:.3rem .4rem;text-align:center;background:#f0f0f0;font-weight:700">Moy S1</th>
+        <?php endif; ?>
+        <?php if ($showCC): ?>
+        <th style="border:1px solid #888;padding:.3rem .4rem;text-align:center">CC /20 <small>(<?= $ccPct ?>)</small></th>
+        <?php endif; ?>
+        <th style="border:1px solid #888;padding:.3rem .4rem;text-align:center">Examen /20 <small>(<?= $examPct ?>)</small></th>
+        <th style="border:1px solid #888;padding:.3rem .4rem;text-align:center;font-weight:700">Moy /20</th>
+        <th style="border:1px solid #888;padding:.3rem .4rem;text-align:center">Mention</th>
+      </tr>
+    </thead>
+    <tbody>
+      <?php foreach ($etudiants as $pi => $pe):
+        $pn   = $existingNotes[$pe['id']] ?? null;
+        $ppn  = $prevNotes[$pe['id']]     ?? null;
+        $pfin = $pn['note_finale'] ?? null;
+        $pMention = '–';
+        if ($pfin !== null) {
+          if ($pfin >= 16)     $pMention = 'Très Bien';
+          elseif ($pfin >= 14) $pMention = 'Bien';
+          elseif ($pfin >= 12) $pMention = 'Assez Bien';
+          elseif ($pfin >= 10) $pMention = 'Passable';
+          else                  $pMention = 'Insuffisant';
+        }
+      ?>
+      <tr>
+        <td style="border:1px solid #ccc;padding:.3rem .4rem;text-align:center"><?= $pi+1 ?></td>
+        <td style="border:1px solid #ccc;padding:.3rem .4rem"><?= h($pe['matricule']) ?></td>
+        <td style="border:1px solid #ccc;padding:.3rem .4rem"><?= h($pe['nom'].' '.$pe['prenom']) ?></td>
+        <?php if ($showS1Ref): ?>
+        <td style="border:1px solid #ccc;padding:.3rem .4rem;text-align:center;background:#fafafa"><?= $ppn && $ppn['note_exam']    !== null ? $ppn['note_exam']    : '–' ?></td>
+        <td style="border:1px solid #ccc;padding:.3rem .4rem;text-align:center;background:#fafafa;font-weight:700"><?= $ppn && $ppn['note_finale'] !== null ? $ppn['note_finale'] : '–' ?></td>
+        <?php endif; ?>
+        <?php if ($showCC): ?>
+        <td style="border:1px solid #ccc;padding:.3rem .4rem;text-align:center"><?= $pn && $pn['note_cc'] !== null ? $pn['note_cc'] : '–' ?></td>
+        <?php endif; ?>
+        <td style="border:1px solid #ccc;padding:.3rem .4rem;text-align:center"><?= $pn && $pn['note_exam']    !== null ? $pn['note_exam']    : '–' ?></td>
+        <td style="border:1px solid #ccc;padding:.3rem .4rem;text-align:center;font-weight:700"><?= $pfin !== null ? $pfin : '–' ?></td>
+        <td style="border:1px solid #ccc;padding:.3rem .4rem;text-align:center"><?= $pMention ?></td>
+      </tr>
+      <?php endforeach; ?>
+    </tbody>
+  </table>
+
+  <div style="display:flex;justify-content:space-between;margin-top:3rem;font-size:.9rem">
+    <div style="text-align:center;min-width:180px"><div style="border-top:1px solid #000;padding-top:.3rem;margin-top:2.5rem">L'Enseignant</div></div>
+    <div style="text-align:center;min-width:180px"><div style="border-top:1px solid #000;padding-top:.3rem;margin-top:2.5rem">La Scolarité</div></div>
+    <div style="text-align:center;min-width:180px"><div style="border-top:1px solid #000;padding-top:.3rem;margin-top:2.5rem">Le Directeur</div></div>
+  </div>
+</div>
+
+<!-- ══════════════════ INTERACTIVE CARD (hidden on print) ══════════════════ -->
+<div class="card no-print">
+  <div class="card-header">
+    <div class="d-flex justify-content-between align-items-center">
+      <div>
+        <strong><?= h($selectedMatiere['nom']) ?></strong>
+        <span class="badge bg-primary ms-2"><?= h($selectedMatiere['filiere_nom'] ?? '') ?></span>
+        <span class="badge bg-secondary ms-1">Coef. <?= $selectedMatiere['coefficient'] ?></span>
+        <span class="badge <?= $sessionNum === 2 ? 'bg-warning text-dark' : 'bg-info text-white' ?> ms-1">
+          Session <?= $sessionNum ?><?= $sessionNum === 2 ? ' – Rattrapage' : '' ?>
+        </span>
+      </div>
+      <div class="d-flex align-items-center gap-3">
+        <span class="text-muted fs-sm"><?= count($etudiants) ?> étudiant(s)</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+          <i class="fas fa-print me-1"></i>Imprimer le PV
+        </button>
+      </div>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="alert alert-info py-2 fs-sm mb-3">
+      <i class="fas fa-info-circle me-2"></i>
+      Note finale = <?= $formuleLabelHtml ?>. Toutes les notes sont sur 20.
+    </div>
+
+    <form method="POST">
+      <input type="hidden" name="csrf"           value="<?= h(generateCsrfToken()) ?>">
+      <input type="hidden" name="matiere_id"     value="<?= $matiereId ?>">
+      <input type="hidden" name="annee_id"       value="<?= $anneeId ?>">
+      <input type="hidden" name="semestre_id"    value="<?= $semestreId ?>">
+      <input type="hidden" name="session"        value="<?= $sessionNum ?>">
+      <input type="hidden" name="formule_calcul" value="<?= h($activeFormule) ?>">
+
+      <div class="table-responsive">
+        <table class="table table-hover">
+          <thead>
+            <?php if ($showS1Ref): ?>
+            <tr class="table-light">
+              <th colspan="3" class="border-0"></th>
+              <th colspan="2" class="text-center text-muted border-start" style="font-size:.72rem;letter-spacing:.5px;background:#f5f5f5">SESSION 1 – RÉFÉRENCE</th>
+              <th colspan="3" class="text-center border-start" style="font-size:.72rem;letter-spacing:.5px;background:#e8f0fe">SESSION 2 – RATTRAPAGE</th>
+            </tr>
+            <?php endif; ?>
+            <tr>
+              <th>#</th>
+              <th>Matricule</th>
+              <th>Nom &amp; Prénom</th>
+              <?php if ($showS1Ref): ?>
+              <th class="text-muted fs-sm border-start" style="background:#fafafa">Exam S1</th>
+              <th class="text-muted fs-sm"              style="background:#fafafa">Moy S1</th>
+              <?php endif; ?>
+              <?php if ($showCC): ?>
+              <th class="<?= $showS1Ref ? 'border-start' : '' ?>">CC /20 <small class="text-muted">(<?= $ccPct ?>)</small></th>
+              <?php endif; ?>
+              <th class="<?= ($showS1Ref && !$showCC) ? 'border-start' : '' ?>">Examen /20 <small class="text-muted">(<?= $examPct ?>)</small></th>
+              <th>Moyenne /20</th>
+              <th>Mention</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($etudiants as $i => $e):
+              $n  = $existingNotes[$e['id']] ?? null;
+              $pn = $prevNotes[$e['id']]     ?? null;
+            ?>
+            <tr>
+              <td class="text-muted"><?= $i + 1 ?></td>
+              <td><code class="fs-sm"><?= h($e['matricule']) ?></code></td>
+              <td>
+                <div class="d-flex align-items-center gap-2">
+                  <div class="avatar-circle" style="background:<?= $e['sexe']==='M'?'#1a73e8':'#e91e63' ?>;width:30px;height:30px;font-size:.7rem;">
+                    <?= strtoupper(substr($e['prenom'],0,1).substr($e['nom'],0,1)) ?>
+                  </div>
+                  <span class="fw-600 fs-sm"><?= h($e['nom'].' '.$e['prenom']) ?></span>
+                </div>
+              </td>
+              <?php if ($showS1Ref): ?>
+              <td class="text-muted fs-sm" style="background:#fafafa"><?= $pn && $pn['note_exam']    !== null ? $pn['note_exam']    : '–' ?></td>
+              <td class="fs-sm"            style="background:#fafafa">
+                <?php if ($pn && $pn['note_finale'] !== null): ?><?= noteBadge((float)$pn['note_finale']) ?><?php else: ?><span class="text-muted">–</span><?php endif; ?>
+              </td>
+              <?php endif; ?>
+              <?php if ($showCC): ?>
+              <td>
+                <input type="number" name="notes[<?= $e['id'] ?>][cc]"
+                       class="form-control form-control-sm note-cc" style="width:88px"
+                       min="0" max="20" step="0.25" placeholder="–"
+                       value="<?= $n && $n['note_cc'] !== null ? $n['note_cc'] : '' ?>"
+                       data-row="<?= $i ?>">
+              </td>
+              <?php endif; ?>
+              <td>
+                <input type="number" name="notes[<?= $e['id'] ?>][exam]"
+                       class="form-control form-control-sm note-exam" style="width:88px"
+                       min="0" max="20" step="0.25" placeholder="–"
+                       value="<?= $n && $n['note_exam'] !== null ? $n['note_exam'] : '' ?>"
+                       data-row="<?= $i ?>">
+              </td>
+              <td>
+                <span class="fw-bold" id="fin_<?= $i ?>">
+                  <?php if ($n && $n['note_finale'] !== null): ?><?= noteBadge((float)$n['note_finale']) ?><?php else: ?><span class="text-muted">–</span><?php endif; ?>
+                </span>
+              </td>
+              <td id="mention_<?= $i ?>">
+                <?php if ($n && $n['note_finale'] !== null): ?><?= getMentionBadge((float)$n['note_finale']) ?><?php else: ?><span class="text-muted">–</span><?php endif; ?>
+              </td>
+            </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="d-flex gap-2 mt-3">
+        <button type="submit" class="btn btn-primary px-4">
+          <i class="fas fa-save me-2"></i>Enregistrer — Session <?= $sessionNum ?>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+const FORMULE_ACTIVE = '<?= h($activeFormule) ?>';
+
+function calcRow(row) {
+  const ccEl   = document.querySelector(`.note-cc[data-row="${row}"]`);
+  const examEl = document.querySelector(`.note-exam[data-row="${row}"]`);
+  const finEl  = document.getElementById('fin_'     + row);
+  const menEl  = document.getElementById('mention_' + row);
+
+  const cc   = ccEl   && ccEl.value   !== '' ? parseFloat(ccEl.value)   : null;
+  const exam = examEl && examEl.value !== '' ? parseFloat(examEl.value) : null;
+
+  let fin = null;
+  if (exam !== null) {
+    if (FORMULE_ACTIVE === 'pondere' && cc !== null) {
+      fin = Math.round((cc * 0.4 + exam * 0.6) * 100) / 100;
+    } else if (FORMULE_ACTIVE === 'demi_somme' && cc !== null) {
+      fin = Math.round((cc + exam) / 2 * 100) / 100;
+    } else {
+      fin = Math.round(exam * 100) / 100;
+    }
+  }
+
+  if (fin !== null) {
+    const cls = fin >= 14 ? 'text-primary fw-bold' : fin >= 10 ? 'text-success' : 'text-danger';
+    finEl.innerHTML = `<span class="${cls}">${fin.toFixed(2)}</span>`;
+    let mention = 'Insuffisant', mCls = 'danger';
+    if      (fin >= 16) { mention = 'Très Bien';  mCls = 'primary'; }
+    else if (fin >= 14) { mention = 'Bien';        mCls = 'success'; }
+    else if (fin >= 12) { mention = 'Assez Bien';  mCls = 'info';    }
+    else if (fin >= 10) { mention = 'Passable';    mCls = 'warning'; }
+    menEl.innerHTML = `<span class="badge bg-${mCls}">${mention}</span>`;
+  } else {
+    finEl.innerHTML = '<span class="text-muted">–</span>';
+    menEl.innerHTML = '<span class="text-muted">–</span>';
+  }
+}
+
+document.querySelectorAll('.note-cc, .note-exam').forEach(el => {
+  el.addEventListener('input', () => calcRow(el.dataset.row));
+});
+</script>
+
+<?php elseif ($matiereId && $anneeId && (!$needsSemestre || $semestreId)): ?>
+<div class="card no-print">
+  <div class="card-body empty-state">
+    <i class="fas fa-users"></i>
+    <h5>Aucun étudiant</h5>
+    <p class="text-muted">Aucun étudiant actif trouvé pour cette matière et cette année.</p>
+  </div>
+</div>
+<?php else: ?>
+<div class="card no-print">
+  <div class="card-body empty-state">
+    <i class="fas fa-hand-point-up"></i>
+    <h5>Sélectionner une matière</h5>
+    <p class="text-muted">
+      Choisissez l'année<?= $needsSemestre ? ', le semestre' : '' ?>, la matière et la session pour afficher la liste.
+    </p>
+  </div>
+</div>
+<?php endif; ?>
+
+<?php include APP_ROOT . '/includes/footer.php'; ?>
