@@ -166,7 +166,9 @@ include APP_ROOT . '/includes/header.php';
             <select name="filiere_id" id="filiere_id" class="form-select" required>
               <option value="">-- Sélectionner --</option>
               <?php foreach ($filieres as $f): ?>
-                <option value="<?= $f['id'] ?>" <?= ($_POST['filiere_id'] ?? '') == $f['id'] ? 'selected' : '' ?>>
+                <option value="<?= $f['id'] ?>"
+                        data-tc-id="<?= (int)($f['tronc_commun_id'] ?? 0) ?>"
+                        <?= ($_POST['filiere_id'] ?? '') == $f['id'] ? 'selected' : '' ?>>
                   <?= h($f['code']) ?> – <?= h($f['nom']) ?>
                 </option>
               <?php endforeach; ?>
@@ -176,8 +178,15 @@ include APP_ROOT . '/includes/header.php';
             <label class="form-label">Niveau <span class="text-danger">*</span></label>
             <select name="niveau_id" id="niveau_id" class="form-select" required>
               <option value="">-- Sélectionner une filière d'abord --</option>
-              <?php if (!empty($_POST['filiere_id'])): ?>
-                <?php foreach (getNiveaux((int)$_POST['filiere_id']) as $n): ?>
+              <?php if (!empty($_POST['filiere_id'])):
+                $filPost = null;
+                foreach ($filieres as $_f) { if ($_f['id'] == $_POST['filiere_id']) { $filPost = $_f; break; } }
+                $niveauxPost = getNiveaux((int)$_POST['filiere_id']);
+                if ($filPost && !empty($filPost['tronc_commun_id'])) {
+                    $niveauxPost = array_values(array_filter($niveauxPost, fn($n) => (int)$n['ordre'] >= 2));
+                }
+              ?>
+                <?php foreach ($niveauxPost as $n): ?>
                   <option value="<?= $n['id'] ?>" <?= ($_POST['niveau_id'] ?? '') == $n['id'] ? 'selected' : '' ?>>
                     <?= h($n['nom']) ?>
                   </option>

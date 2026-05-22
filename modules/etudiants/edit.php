@@ -84,9 +84,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$filieres = getFilieres();
-$annees   = getAnneesAcademiques();
+$filieres   = getFilieres();
+$annees     = getAnneesAcademiques();
 $niveauxFil = getNiveaux($etudiant['filiere_id']);
+// Filtrer Année 1 pour les filières avec tronc_commun_id (INF, SF)
+$filCurrent = null;
+foreach ($filieres as $_f) { if ($_f['id'] == $etudiant['filiere_id']) { $filCurrent = $_f; break; } }
+if ($filCurrent && !empty($filCurrent['tronc_commun_id'])) {
+    $niveauxFil = array_values(array_filter($niveauxFil, fn($n) => (int)$n['ordre'] >= 2));
+}
 
 $pageTitle = 'Modifier ' . h($etudiant['prenom'] . ' ' . $etudiant['nom']);
 $breadcrumb = [
@@ -172,7 +178,9 @@ include APP_ROOT . '/includes/header.php';
             <select name="filiere_id" id="filiere_id" class="form-select" required>
               <option value="">-- Sélectionner --</option>
               <?php foreach ($filieres as $f): ?>
-                <option value="<?= $f['id'] ?>" <?= ($_POST['filiere_id'] ?? $etudiant['filiere_id']) == $f['id'] ? 'selected' : '' ?>>
+                <option value="<?= $f['id'] ?>"
+                        data-tc-id="<?= (int)($f['tronc_commun_id'] ?? 0) ?>"
+                        <?= ($_POST['filiere_id'] ?? $etudiant['filiere_id']) == $f['id'] ? 'selected' : '' ?>>
                   <?= h($f['code']) ?> – <?= h($f['nom']) ?>
                 </option>
               <?php endforeach; ?>
