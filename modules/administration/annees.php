@@ -6,12 +6,104 @@ requireRole(['admin', 'directeur']);
 $db     = getDB();
 $errors = [];
 
-// Set active annee
+// Migrations
+try { $db->exec("ALTER TABLE semestres ADD COLUMN niveau_superieur TINYINT(1) NOT NULL DEFAULT 0"); } catch (PDOException $e) {}
+try { $db->exec("ALTER TABLE semestres ADD COLUMN semestre_num TINYINT NULL"); } catch (PDOException $e) {}
+
+/**
+ * Crée automatiquement les semestres manquants pour une année :
+ *  - 2 semestres standards (Semestre 1, Semestre 2)
+ *  - 6 semestres niveau supérieur (S1 à S6)
+ */
+function createSemestresForAnnee(PDO $db, int $anneeId): void {
+    // Semestres déjà présents pour cette année
+    $existing = $db->prepare("SELECT nom FROM semestres WHERE annee_id=?");
+    $existing->execute([$anneeId]);
+    $existingNames = array_column($existing->fetchAll(), 'nom');
+
+    $toCreate = [
+        // Standard (non niveau supérieur)
+        ['nom' => 'Semestre 1', 'niv_sup' => 0, 'num' => null],
+        ['nom' => 'Semestre 2', 'niv_sup' => 0, 'num' => null],
+        // Niveau supérieur S1-S6
+        ['nom' => 'S1 – Niveau Supérieur', 'niv_sup' => 1, 'num' => 1],
+        ['nom' => 'S2 – Niveau Supérieur', 'niv_sup' => 1, 'num' => 2],
+        ['nom' => 'S3 – Niveau Supérieur', 'niv_sup' => 1, 'num' => 3],
+        ['nom' => 'S4 – Niveau Supérieur', 'niv_sup' => 1, 'num' => 4],
+        ['nom' => 'S5 – Niveau Supérieur', 'niv_sup' => 1, 'num' => 5],
+        ['nom' => 'S6 – Niveau Supérieur', 'niv_sup' => 1, 'num' => 6],
+    ];
+
+    $ins = $db->prepare("
+        INSERT INTO semestres (annee_id, nom, niveau_superieur, semestre_num, actif)
+        VALUES (?, ?, ?, ?, 0)
+    ");
+    foreach ($toCreate as $s) {
+        if (!in_array($s['nom'], $existingNames)) {
+            $ins->execute([$anneeId, $s['nom'], $s['niv_sup'], $s['num']]);
+        }
+    }
+}
+
+// Delete annee
+if (isset($_GET['delete_annee']) && isset($_GET['csrf']) && hasRole('admin') && verifyCsrfToken($_GET['csrf'])) {
+    $id = (int)$_GET['delete_annee'];
+    $row = $db->prepare("SELECT actif FROM annees_academiques WHERE id=?");
+    $row->execute([$id]);
+    $ann = $row->fetch();
+    if (!$ann) {
+        setFlash('error', 'Année introuvable.');
+    } elseif ($ann['actif']) {
+        setFlash('error', 'Impossible de supprimer l\'année active.');
+    } else {
+        // Vérifier si des notes existent pour cette année
+        $nbNotes = (int)$db->prepare("SELECT COUNT(*) FROM notes WHERE annee_id=?")->execute([$id]) ?
+                   $db->query("SELECT COUNT(*) FROM notes WHERE annee_id=$id")->fetchColumn() : 0;
+        $chkN = $db->prepare("SELECT COUNT(*) FROM notes WHERE annee_id=?");
+        $chkN->execute([$id]);
+        $nbNotes = (int)$chkN->fetchColumn();
+        if ($nbNotes > 0) {
+            setFlash('error', "Impossible de supprimer : {$nbNotes} note(s) enregistrée(s) pour cette année.");
+        } else {
+            // Supprimer les semestres puis l'année
+            $db->prepare("DELETE FROM semestres WHERE annee_id=?")->execute([$id]);
+            $db->prepare("DELETE FROM annees_academiques WHERE id=?")->execute([$id]);
+            setFlash('success', 'Année académique et ses semestres supprimés.');
+        }
+    }
+    redirect('/modules/administration/annees.php');
+}
+
+// Delete semestre
+if (isset($_GET['delete_sem']) && isset($_GET['csrf']) && hasRole('admin') && verifyCsrfToken($_GET['csrf'])) {
+    $id = (int)$_GET['delete_sem'];
+    $chkN = $db->prepare("SELECT COUNT(*) FROM notes WHERE semestre_id=?");
+    $chkN->execute([$id]);
+    $nbNotes = (int)$chkN->fetchColumn();
+    if ($nbNotes > 0) {
+        setFlash('error', "Impossible de supprimer : {$nbNotes} note(s) liée(s) à ce semestre.");
+    } else {
+        $db->prepare("DELETE FROM semestres WHERE id=?")->execute([$id]);
+        setFlash('success', 'Semestre supprimé.');
+    }
+    redirect('/modules/administration/annees.php');
+}
+
+// Activate annee
 if (isset($_GET['activate']) && isset($_GET['csrf']) && hasRole('admin') && verifyCsrfToken($_GET['csrf'])) {
     $id = (int)$_GET['activate'];
     $db->exec("UPDATE annees_academiques SET actif=0");
     $db->prepare("UPDATE annees_academiques SET actif=1 WHERE id=?")->execute([$id]);
-    setFlash('success', 'Année académique activée.');
+    createSemestresForAnnee($db, $id);
+    setFlash('success', 'Année académique activée — semestres vérifiés/créés automatiquement.');
+    redirect('/modules/administration/annees.php');
+}
+
+// Deactivate annee
+if (isset($_GET['deactivate']) && isset($_GET['csrf']) && hasRole('admin') && verifyCsrfToken($_GET['csrf'])) {
+    $id = (int)$_GET['deactivate'];
+    $db->prepare("UPDATE annees_academiques SET actif=0 WHERE id=?")->execute([$id]);
+    setFlash('success', 'Année académique désactivée.');
     redirect('/modules/administration/annees.php');
 }
 
@@ -44,7 +136,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'an
             } else {
                 $db->prepare("INSERT INTO annees_academiques (libelle,date_debut,date_fin,actif) VALUES (?,?,?,0)")
                    ->execute([$libelle, $dateDebut ?: null, $dateFin ?: null]);
-                setFlash('success', 'Année créée.');
+                $newId = (int)$db->lastInsertId();
+                // Créer d'emblée tous les semestres pour la nouvelle année
+                createSemestresForAnnee($db, $newId);
+                setFlash('success', 'Année créée — semestres initialisés automatiquement.');
             }
             redirect('/modules/administration/annees.php');
         }
@@ -79,7 +174,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'se
 }
 
 $annees   = $db->query("SELECT a.*, COUNT(s.id) as nb_semestres FROM annees_academiques a LEFT JOIN semestres s ON s.annee_id=a.id GROUP BY a.id ORDER BY a.libelle DESC")->fetchAll();
-$semestres = $db->query("SELECT s.*, a.libelle as annee_libelle FROM semestres s JOIN annees_academiques a ON a.id=s.annee_id ORDER BY a.libelle DESC, s.id")->fetchAll();
+$semestres = $db->query("SELECT s.*, a.libelle as annee_libelle FROM semestres s JOIN annees_academiques a ON a.id=s.annee_id ORDER BY a.libelle DESC, s.niveau_superieur ASC, COALESCE(s.semestre_num, 0) ASC, s.id")->fetchAll();
 
 $pageTitle  = 'Années académiques';
 $breadcrumb = ['Administration' => null, 'Années académiques' => null];
@@ -102,79 +197,197 @@ include APP_ROOT . '/includes/header.php';
 
 <?php foreach ($errors as $e): ?><div class="alert alert-danger"><?= h($e) ?></div><?php endforeach; ?>
 
-<div class="row g-4">
-  <!-- Annees -->
-  <div class="col-md-6">
-    <div class="card">
-      <div class="card-header"><i class="fas fa-calendar me-2 text-primary"></i>Années académiques</div>
-      <div class="table-responsive">
-        <table class="table mb-0">
-          <thead><tr><th>Libellé</th><th>Période</th><th>Semestres</th><th>Statut</th><th>Actions</th></tr></thead>
-          <tbody>
-            <?php foreach ($annees as $a): ?>
-            <tr>
-              <td class="fw-bold"><?= h($a['libelle']) ?></td>
-              <td class="fs-sm text-muted">
-                <?= formatDate($a['date_debut']) ?> – <?= formatDate($a['date_fin']) ?>
-              </td>
-              <td class="text-center"><?= $a['nb_semestres'] ?></td>
-              <td>
+<div class="d-flex flex-column gap-4">
+
+  <!-- ── Années académiques ───────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header"><i class="fas fa-calendar me-2 text-primary"></i>Années académiques</div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <colgroup>
+          <col style="width:20%">
+          <col style="width:24%">
+          <col style="width:10%">
+          <col style="width:12%">
+          <col style="width:34%">
+        </colgroup>
+        <thead class="table-light">
+          <tr>
+            <th>Libellé</th>
+            <th>Période</th>
+            <th class="text-center">Semestres</th>
+            <th>Statut</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($annees as $a): ?>
+          <tr class="<?= $a['actif'] ? 'table-success' : '' ?>">
+            <td class="fw-bold"><?= h($a['libelle']) ?></td>
+            <td class="text-muted" style="font-size:.85rem">
+              <?php if ($a['date_debut'] || $a['date_fin']): ?>
+                <i class="fas fa-calendar-day me-1 text-secondary"></i>
+                <?= formatDate($a['date_debut']) ?> &rarr; <?= formatDate($a['date_fin']) ?>
+              <?php else: ?>
+                <span class="fst-italic">Non définie</span>
+              <?php endif; ?>
+            </td>
+            <td class="text-center">
+              <span class="badge bg-primary bg-opacity-10 text-primary fw-600"><?= $a['nb_semestres'] ?></span>
+            </td>
+            <td>
+              <?php if ($a['actif']): ?>
+                <span class="badge bg-success px-2 py-1">
+                  <i class="fas fa-check-circle me-1"></i>Active
+                </span>
+              <?php else: ?>
+                <span class="badge bg-secondary px-2 py-1">
+                  <i class="fas fa-circle me-1" style="font-size:.6rem"></i>Inactive
+                </span>
+              <?php endif; ?>
+            </td>
+            <td style="white-space:nowrap">
+              <?php if (hasRole('admin')): ?>
+              <div class="d-flex gap-2 align-items-center flex-wrap">
                 <?php if ($a['actif']): ?>
-                  <span class="badge bg-success">Active</span>
-                <?php elseif (hasRole('admin')): ?>
-                  <a href="?activate=<?= $a['id'] ?>&csrf=<?= h(generateCsrfToken()) ?>" class="badge bg-secondary text-decoration-none" onclick="return confirm('Activer cette année ?')">Inactif</a>
+                  <a href="?deactivate=<?= $a['id'] ?>&csrf=<?= h(generateCsrfToken()) ?>"
+                     class="btn btn-sm btn-outline-secondary"
+                     onclick="return confirm('Désactiver l\'année «<?= h(addslashes($a['libelle'])) ?>» ?')">
+                    <i class="fas fa-toggle-off me-1"></i>Désactiver
+                  </a>
                 <?php else: ?>
-                  <span class="badge bg-secondary">Inactif</span>
+                  <a href="?activate=<?= $a['id'] ?>&csrf=<?= h(generateCsrfToken()) ?>"
+                     class="btn btn-sm btn-success"
+                     onclick="return confirm('Activer l\'année «<?= h(addslashes($a['libelle'])) ?>» ?')">
+                    <i class="fas fa-toggle-on me-1"></i>Activer
+                  </a>
                 <?php endif; ?>
-              </td>
-              <td>
-                <?php if (hasRole('admin')): ?>
-                <button class="btn btn-icon btn-sm btn-outline-warning" onclick='editAnnee(<?= json_encode($a) ?>)'><i class="fas fa-edit"></i></button>
+                <button class="btn btn-sm btn-warning text-white" title="Modifier"
+                        onclick='editAnnee(<?= json_encode($a) ?>)'>
+                  <i class="fas fa-edit me-1"></i>Modifier
+                </button>
+                <?php if (!$a['actif']): ?>
+                <a href="?delete_annee=<?= $a['id'] ?>&csrf=<?= h(generateCsrfToken()) ?>"
+                   class="btn btn-sm btn-danger"
+                   onclick="return confirm('Supprimer l\'année «<?= h(addslashes($a['libelle'])) ?>» et tous ses semestres ?')">
+                  <i class="fas fa-trash me-1"></i>Supprimer
+                </a>
+                <?php else: ?>
+                <button class="btn btn-sm btn-danger" disabled style="opacity:.4;cursor:not-allowed">
+                  <i class="fas fa-trash me-1"></i>Supprimer
+                </button>
                 <?php endif; ?>
-              </td>
-            </tr>
-            <?php endforeach; ?>
-          </tbody>
-        </table>
-      </div>
+              </div>
+              <?php endif; ?>
+            </td>
+          </tr>
+          <?php endforeach; ?>
+          <?php if (empty($annees)): ?>
+          <tr><td colspan="5" class="text-center text-muted py-4"><i class="fas fa-inbox d-block mb-1"></i>Aucune année enregistrée</td></tr>
+          <?php endif; ?>
+        </tbody>
+      </table>
     </div>
   </div>
 
-  <!-- Semestres -->
-  <div class="col-md-6">
-    <div class="card">
-      <div class="card-header"><i class="fas fa-sliders-h me-2 text-primary"></i>Semestres</div>
-      <div class="table-responsive">
-        <table class="table mb-0">
-          <thead><tr><th>Année</th><th>Semestre</th><th>Période</th><th>Statut</th><th>Actions</th></tr></thead>
-          <tbody>
-            <?php foreach ($semestres as $s): ?>
-            <tr>
-              <td class="fs-sm text-muted"><?= h($s['annee_libelle']) ?></td>
-              <td class="fw-600"><?= h($s['nom']) ?></td>
-              <td class="fs-sm text-muted"><?= formatDate($s['date_debut']) ?> – <?= formatDate($s['date_fin']) ?></td>
-              <td>
-                <?php if ($s['actif']): ?>
-                  <span class="badge bg-success">Actif</span>
-                <?php elseif (hasRole('admin')): ?>
-                  <a href="?activate_sem=<?= $s['id'] ?>&csrf=<?= h(generateCsrfToken()) ?>" class="badge bg-secondary text-decoration-none" onclick="return confirm('Activer ce semestre ?')">Inactif</a>
+  <!-- ── Semestres ────────────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header d-flex align-items-center justify-content-between">
+      <span><i class="fas fa-sliders-h me-2 text-primary"></i>Semestres</span>
+      <span class="badge bg-info text-dark" style="font-size:.72rem">
+        <i class="fas fa-magic me-1"></i>Auto-créés à l'activation
+      </span>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <colgroup>
+          <col style="width:18%">
+          <col style="width:25%">
+          <col style="width:14%">
+          <col style="width:15%">
+          <col style="width:28%">
+        </colgroup>
+        <thead class="table-light">
+          <tr>
+            <th>Année</th>
+            <th>Semestre</th>
+            <th>Type</th>
+            <th>Statut</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($semestres as $s): ?>
+          <tr>
+            <td class="text-muted" style="font-size:.85rem"><?= h($s['annee_libelle']) ?></td>
+            <td class="fw-600" style="font-size:.88rem"><?= h($s['nom']) ?></td>
+            <td>
+              <?php if (!empty($s['niveau_superieur'])): ?>
+                <span class="badge" style="background:#e8eaf6;color:#1a237e;font-size:.72rem">
+                  <i class="fas fa-graduation-cap me-1"></i>Niv. Sup. S<?= $s['semestre_num'] ?>
+                </span>
+              <?php else: ?>
+                <span class="badge bg-light text-secondary border" style="font-size:.72rem">Standard</span>
+              <?php endif; ?>
+            </td>
+            <td>
+              <?php if ($s['actif']): ?>
+                <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Actif</span>
+              <?php elseif (hasRole('admin')): ?>
+                <a href="?activate_sem=<?= $s['id'] ?>&csrf=<?= h(generateCsrfToken()) ?>"
+                   class="badge bg-secondary text-decoration-none"
+                   onclick="return confirm('Activer ce semestre ?')">
+                  <i class="fas fa-toggle-off me-1"></i>Inactif
+                </a>
+              <?php else: ?>
+                <span class="badge bg-secondary">Inactif</span>
+              <?php endif; ?>
+            </td>
+            <td style="white-space:nowrap">
+              <?php if (hasRole('admin')): ?>
+              <div class="d-flex gap-2 align-items-center">
+                <button class="btn btn-sm btn-warning text-white" title="Modifier"
+                        onclick='editSemestre(<?= json_encode($s) ?>)'>
+                  <i class="fas fa-edit me-1"></i>Modifier
+                </button>
+                <?php if (!$s['actif']): ?>
+                <a href="?delete_sem=<?= $s['id'] ?>&csrf=<?= h(generateCsrfToken()) ?>"
+                   class="btn btn-sm btn-danger" title="Supprimer"
+                   onclick="return confirm('Supprimer le semestre «<?= h(addslashes($s['nom'])) ?>» ?')">
+                  <i class="fas fa-trash me-1"></i>Supprimer
+                </a>
                 <?php else: ?>
-                  <span class="badge bg-secondary">Inactif</span>
+                <button class="btn btn-sm btn-danger" disabled title="Semestre actif — non supprimable"
+                        style="opacity:.45;cursor:not-allowed">
+                  <i class="fas fa-trash me-1"></i>Supprimer
+                </button>
                 <?php endif; ?>
-              </td>
-              <td>
-                <?php if (hasRole('admin')): ?>
-                <button class="btn btn-icon btn-sm btn-outline-warning" onclick='editSemestre(<?= json_encode($s) ?>)'><i class="fas fa-edit"></i></button>
-                <?php endif; ?>
-              </td>
-            </tr>
-            <?php endforeach; ?>
-          </tbody>
-        </table>
-      </div>
+              </div>
+              <?php endif; ?>
+            </td>
+          </tr>
+          <?php endforeach; ?>
+          <?php if (empty($semestres)): ?>
+          <tr><td colspan="5" class="text-center text-muted py-4"><i class="fas fa-inbox d-block mb-1"></i>Aucun semestre enregistré</td></tr>
+          <?php endif; ?>
+        </tbody>
+      </table>
     </div>
   </div>
+
 </div>
+
+<!-- Info box: auto-génération -->
+<?php if (hasRole('admin')): ?>
+<div class="alert alert-info d-flex align-items-center gap-3 mt-3" style="font-size:.87rem">
+  <i class="fas fa-info-circle fa-lg"></i>
+  <div>
+    <strong>Semestres automatiques :</strong> à la création ou à l'activation d'une année, le système crée automatiquement
+    <strong>Semestre 1 &amp; 2</strong> (filières standard) et <strong>S1 à S6 – Niveau Supérieur</strong> (LSIO/TC, INF, SF)
+    s'ils n'existent pas encore.
+  </div>
+</div>
+<?php endif; ?>
 
 <!-- Annee Modal -->
 <div class="modal fade" id="anneeModal" tabindex="-1">

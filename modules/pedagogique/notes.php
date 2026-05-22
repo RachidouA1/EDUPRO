@@ -10,6 +10,10 @@ $user = getCurrentUser();
 try { $db->exec("ALTER TABLE notes    ADD COLUMN session        TINYINT     NOT NULL DEFAULT 1"); } catch (PDOException $e) {}
 try { $db->exec("ALTER TABLE matieres ADD COLUMN formule_calcul VARCHAR(20) NOT NULL DEFAULT 'pondere'"); } catch (PDOException $e) {}
 try { $db->exec("ALTER TABLE notes MODIFY COLUMN semestre_id INT NULL"); } catch (PDOException $e) {}
+try { $db->exec("ALTER TABLE filieres ADD COLUMN niveau_superieur TINYINT(1) NOT NULL DEFAULT 0"); } catch (PDOException $e) {}
+try { $db->exec("UPDATE filieres SET niveau_superieur=1 WHERE tronc_commun=1 OR tronc_commun_id IS NOT NULL"); } catch (PDOException $e) {}
+try { $db->exec("ALTER TABLE semestres ADD COLUMN niveau_superieur TINYINT(1) NOT NULL DEFAULT 0"); } catch (PDOException $e) {}
+try { $db->exec("ALTER TABLE semestres ADD COLUMN semestre_num TINYINT NULL"); } catch (PDOException $e) {}
 
 $anneeId    = (int)($_GET['annee_id']    ?? getActiveAnnee()['id'] ?? 0);
 $semestreId = (int)($_GET['semestre_id'] ?? 0);
@@ -85,7 +89,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['notes'])) {
 }
 
 // ── Build matière list ────────────────────────────────────────────────────────
-$mQuery = "SELECT m.*, f.nom as filiere_nom, f.code as filiere_code, n.nom as niveau_nom
+$mQuery = "SELECT m.*, f.nom as filiere_nom, f.code as filiere_code,
+                  f.niveau_superieur as filiere_niveau_sup, n.nom as niveau_nom
            FROM matieres m
            LEFT JOIN filieres f ON f.id=m.filiere_id
            LEFT JOIN niveaux  n ON n.id=m.niveau_id
@@ -103,13 +108,22 @@ $mStmt = $db->prepare($mQuery);
 $mStmt->execute($mParams);
 $matieres = $mStmt->fetchAll();
 
-// ── Semestre logic (ASB/VP = no semestre) ────────────────────────────────────
-$matiereCodeMap = [];
-foreach ($matieres as $_m) { $matiereCodeMap[$_m['id']] = strtoupper($_m['filiere_code'] ?? ''); }
+// ── Semestre logic (ASB/VP et niveau supérieur = no semestre_id) ─────────────
+$matiereCodeMap   = [];
+$matiereNivSupMap = [];
+foreach ($matieres as $_m) {
+    $matiereCodeMap[$_m['id']]   = strtoupper($_m['filiere_code'] ?? '');
+    $matiereNivSupMap[$_m['id']] = !empty($_m['filiere_niveau_sup']);
+}
 
 $needsSemestre = true;
 if ($matiereId && isset($matiereCodeMap[$matiereId])) {
     $needsSemestre = !in_array($matiereCodeMap[$matiereId], $NO_SEM_CODES);
+}
+// Pour le niveau supérieur, le semestre est encodé dans matiere.semestre_num
+// On n'utilise pas semestre_id (cohérence avec bulletins.php qui filtre par m.semestre_num)
+if ($matiereId && !empty($matiereNivSupMap[$matiereId])) {
+    $needsSemestre = false;
 }
 if (!$needsSemestre) $semestreId = 0;
 
@@ -122,16 +136,21 @@ $activeFormule   = 'pondere';
 
 if ($matiereId && $anneeId && (!$needsSemestre || $semestreId)) {
     $smStmt = $db->prepare("
-        SELECT m.*, f.nom as filiere_nom, f.code as filiere_code, n.id as niv_id, n.nom as niveau_nom
+        SELECT m.*, f.nom as filiere_nom, f.code as filiere_code,
+               f.niveau_superieur as fil_niveau_sup,
+               n.id as niv_id, n.nom as niveau_nom,
+               u.code_ue as ue_code, u.nom as ue_nom
         FROM matieres m
         LEFT JOIN filieres f ON f.id=m.filiere_id
         LEFT JOIN niveaux  n ON n.id=m.niveau_id
+        LEFT JOIN ue u ON u.id=m.ue_id
         WHERE m.id=?
     ");
     $smStmt->execute([$matiereId]);
     $selectedMatiere = $smStmt->fetch();
 
     if ($selectedMatiere) {
+        $isNivSup = !empty($selectedMatiere['fil_niveau_sup']);
         $activeFormule = effectiveFormule(
             $selectedMatiere['filiere_code'] ?? '',
             $selectedMatiere['formule_calcul'] ?? 'pondere'
@@ -199,10 +218,19 @@ include APP_ROOT . '/includes/header.php';
         <label class="form-label">Semestre</label>
         <select name="semestre_id" id="semestre_id" class="form-select">
           <option value="">-- Sélectionner --</option>
-          <?php foreach ($semestres as $s): ?>
-            <option value="<?= $s['id'] ?>" <?= $semestreId == $s['id'] ? 'selected' : '' ?>><?= h($s['nom']) ?></option>
+          <?php foreach ($semestres as $s): if (!empty($s['niveau_superieur'])) continue; ?>
+            <option value="<?= $s['id'] ?>"
+                    <?= $semestreId == $s['id'] ? 'selected' : '' ?>>
+              <?= h($s['nom']) ?>
+            </option>
           <?php endforeach; ?>
         </select>
+      </div>
+      <div class="col-md-2" id="semestre_nivsup_col" style="display:none">
+        <label class="form-label">Semestre</label>
+        <div id="semestre_nivsup_badge" class="form-control-plaintext">
+          <span class="badge bg-info text-dark fs-sm" id="semestre_nivsup_label">–</span>
+        </div>
       </div>
       <div class="col-md-3">
         <label class="form-label">Matière</label>
@@ -210,7 +238,9 @@ include APP_ROOT . '/includes/header.php';
           <option value="">-- Sélectionner --</option>
           <?php foreach ($matieres as $m): ?>
             <option value="<?= $m['id'] ?>" <?= $matiereId == $m['id'] ? 'selected' : '' ?>
-              data-filiere-code="<?= h(strtoupper($m['filiere_code'] ?? '')) ?>">
+              data-filiere-code="<?= h(strtoupper($m['filiere_code'] ?? '')) ?>"
+              data-niv-sup="<?= !empty($m['filiere_niveau_sup']) ? '1' : '0' ?>"
+              data-sem-num="<?= (int)($m['semestre_num'] ?? 0) ?>">
               <?= h($m['code']) ?> – <?= h($m['nom']) ?> (<?= h($m['filiere_code'] ?? '') ?> <?= h($m['niveau_nom'] ?? '') ?>)
             </option>
           <?php endforeach; ?>
@@ -230,18 +260,40 @@ include APP_ROOT . '/includes/header.php';
   </div>
 </div>
 
-<!-- semestre show/hide + init on page load -->
+<!-- semestre show/hide selon type de matière -->
 <script>
 const NO_SEM_CODES_JS = ['ASB', 'VP'];
+
 function onMatiereChange(sel) {
-  const opt  = sel ? sel.options[sel.selectedIndex] : null;
-  const code = (opt ? opt.getAttribute('data-filiere-code') || '' : '').toUpperCase();
-  const col  = document.getElementById('semestre_filter_col');
-  if (!col) return;
-  const hide = sel && sel.value !== '' && NO_SEM_CODES_JS.includes(code);
-  col.style.display = hide ? 'none' : '';
-  if (hide) { const s = document.getElementById('semestre_id'); if (s) s.value = ''; }
+  const opt      = sel ? sel.options[sel.selectedIndex] : null;
+  const code     = (opt ? opt.getAttribute('data-filiere-code') || '' : '').toUpperCase();
+  const nivSup   = opt ? opt.getAttribute('data-niv-sup') === '1' : false;
+  const semNum   = opt ? parseInt(opt.getAttribute('data-sem-num') || '0') : 0;
+  const hasVal   = sel && sel.value !== '';
+
+  const stdCol   = document.getElementById('semestre_filter_col');
+  const nsCol    = document.getElementById('semestre_nivsup_col');
+  const nsLabel  = document.getElementById('semestre_nivsup_label');
+  const semSel   = document.getElementById('semestre_id');
+
+  const isSansSem = hasVal && NO_SEM_CODES_JS.includes(code);
+  const isNivSup  = hasVal && nivSup;
+
+  if (isSansSem || isNivSup) {
+    if (stdCol) stdCol.style.display = 'none';
+    if (semSel) semSel.value = '';
+  } else {
+    if (stdCol) stdCol.style.display = '';
+  }
+
+  if (isNivSup) {
+    if (nsCol)   nsCol.style.display = '';
+    if (nsLabel) nsLabel.textContent = semNum ? 'Semestre ' + semNum : '–';
+  } else {
+    if (nsCol) nsCol.style.display = 'none';
+  }
 }
+
 document.addEventListener('DOMContentLoaded', function () {
   const mSel = document.getElementById('matiere_filter');
   if (mSel) onMatiereChange(mSel);
@@ -257,7 +309,9 @@ document.addEventListener('DOMContentLoaded', function () {
   $anneeLabel    = '';
   foreach ($annees as $_a) { if ($_a['id'] == $anneeId) { $anneeLabel = $_a['libelle']; break; } }
   $semestreLabel = '';
-  if ($needsSemestre && $semestreId) {
+  if ($isNivSup && !empty($selectedMatiere['semestre_num'])) {
+      $semestreLabel = 'Semestre ' . $selectedMatiere['semestre_num'];
+  } elseif ($needsSemestre && $semestreId) {
       foreach ($semestres as $_s) { if ($_s['id'] == $semestreId) { $semestreLabel = $_s['nom']; break; } }
   }
   $showS1Ref = ($sessionNum === 2);
@@ -398,7 +452,19 @@ document.addEventListener('DOMContentLoaded', function () {
     <div class="alert alert-info py-2 fs-sm mb-3">
       <i class="fas fa-info-circle me-2"></i>
       Note finale = <?= $formuleLabelHtml ?>. Toutes les notes sont sur 20.
+      <?php if ($selectedMatiere['ue_code'] ?? null): ?>
+        &mdash; UE : <strong><?= h($selectedMatiere['ue_code']) ?></strong> <?= h($selectedMatiere['ue_nom']) ?>
+      <?php endif; ?>
     </div>
+    <?php if ($isNivSup): ?>
+    <div class="alert py-2 fs-sm mb-3 d-flex flex-wrap gap-2 align-items-center" style="background:#fff8e1;border:1px solid #ffe082;color:#5d4037">
+      <i class="fas fa-graduation-cap me-1"></i><strong>Règles niveau supérieur :</strong>
+      <span class="badge" style="background:#e8f5e9;color:#1b5e20;border:1px solid #a5d6a7">≥ 10 &rarr; Validé</span>
+      <span class="badge" style="background:#fff3e0;color:#e65100;border:1px solid #ffcc80">6 – 9 &rarr; Compensable (selon moyenne UE)</span>
+      <span class="badge" style="background:#ffebee;color:#b71c1c;border:1px solid #ef9a9a">≤ 5 &rarr; Éliminatoire (non compensable)</span>
+      <span class="text-muted ms-1">La validation de l'UE requiert une moyenne UE ≥ 10 sans note éliminatoire.</span>
+    </div>
+    <?php endif; ?>
 
     <form method="POST">
       <input type="hidden" name="csrf"           value="<?= h(generateCsrfToken()) ?>">
@@ -432,6 +498,7 @@ document.addEventListener('DOMContentLoaded', function () {
               <th class="<?= ($showS1Ref && !$showCC) ? 'border-start' : '' ?>">Examen /20 <small class="text-muted">(<?= $examPct ?>)</small></th>
               <th>Moyenne /20</th>
               <th>Mention</th>
+              <?php if ($isNivSup): ?><th>Statut</th><?php endif; ?>
             </tr>
           </thead>
           <tbody>
@@ -480,6 +547,22 @@ document.addEventListener('DOMContentLoaded', function () {
               <td id="mention_<?= $i ?>">
                 <?php if ($n && $n['note_finale'] !== null): ?><?= getMentionBadge((float)$n['note_finale']) ?><?php else: ?><span class="text-muted">–</span><?php endif; ?>
               </td>
+              <?php if ($isNivSup): ?>
+              <td id="statut_<?= $i ?>">
+                <?php
+                  if ($n && $n['note_finale'] !== null) {
+                      $nf = (float)$n['note_finale'];
+                      if ($nf >= 10) {
+                          echo '<span class="badge" style="background:#e8f5e9;color:#1b5e20;border:1px solid #a5d6a7"><i class="fas fa-check me-1"></i>Validé</span>';
+                      } elseif ($nf <= 5) {
+                          echo '<span class="badge" style="background:#ffebee;color:#b71c1c;border:1px solid #ef9a9a"><i class="fas fa-times me-1"></i>Éliminatoire</span>';
+                      } else {
+                          echo '<span class="badge" style="background:#fff3e0;color:#e65100;border:1px solid #ffcc80"><i class="fas fa-balance-scale me-1"></i>Compensable</span>';
+                      }
+                  } else { echo '<span class="text-muted">–</span>'; }
+                ?>
+              </td>
+              <?php endif; ?>
             </tr>
             <?php endforeach; ?>
           </tbody>
@@ -497,12 +580,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
 <script>
 const FORMULE_ACTIVE = '<?= h($activeFormule) ?>';
+const IS_NIV_SUP     = <?= ($isNivSup ?? false) ? 'true' : 'false' ?>;
 
 function calcRow(row) {
   const ccEl   = document.querySelector(`.note-cc[data-row="${row}"]`);
   const examEl = document.querySelector(`.note-exam[data-row="${row}"]`);
   const finEl  = document.getElementById('fin_'     + row);
   const menEl  = document.getElementById('mention_' + row);
+  const stEl   = document.getElementById('statut_'  + row);
 
   const cc   = ccEl   && ccEl.value   !== '' ? parseFloat(ccEl.value)   : null;
   const exam = examEl && examEl.value !== '' ? parseFloat(examEl.value) : null;
@@ -527,9 +612,21 @@ function calcRow(row) {
     else if (fin >= 12) { mention = 'Assez Bien';  mCls = 'info';    }
     else if (fin >= 10) { mention = 'Passable';    mCls = 'warning'; }
     menEl.innerHTML = `<span class="badge bg-${mCls}">${mention}</span>`;
+
+    // Statut niveau supérieur
+    if (IS_NIV_SUP && stEl) {
+      if (fin >= 10) {
+        stEl.innerHTML = '<span class="badge" style="background:#e8f5e9;color:#1b5e20;border:1px solid #a5d6a7"><i class="fas fa-check me-1"></i>Validé</span>';
+      } else if (fin <= 5) {
+        stEl.innerHTML = '<span class="badge" style="background:#ffebee;color:#b71c1c;border:1px solid #ef9a9a"><i class="fas fa-times me-1"></i>Éliminatoire</span>';
+      } else {
+        stEl.innerHTML = '<span class="badge" style="background:#fff3e0;color:#e65100;border:1px solid #ffcc80"><i class="fas fa-balance-scale me-1"></i>Compensable</span>';
+      }
+    }
   } else {
     finEl.innerHTML = '<span class="text-muted">–</span>';
     menEl.innerHTML = '<span class="text-muted">–</span>';
+    if (IS_NIV_SUP && stEl) stEl.innerHTML = '<span class="text-muted">–</span>';
   }
 }
 
