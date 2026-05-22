@@ -41,13 +41,19 @@ function showFlash(): void {
 }
 
 function generateMatricule(string $prefix): string {
-    $db = getDB();
-    $year = date('Y');
-    $short = substr($year, 2);
+    $db    = getDB();
+    $short = substr(date('Y'), 2);
     $table = ($prefix === 'ETU') ? 'etudiants' : 'enseignants';
-    $stmt = $db->query("SELECT COUNT(*) FROM {$table}");
+    // Partir du COUNT pour éviter les trous, mais vérifier l'unicité si des suppressions ont eu lieu
+    $stmt  = $db->query("SELECT COUNT(*) FROM {$table}");
     $count = (int)$stmt->fetchColumn();
-    return $prefix . $short . str_pad($count + 1, 4, '0', STR_PAD_LEFT);
+    do {
+        $count++;
+        $candidate = $prefix . $short . str_pad($count, 4, '0', STR_PAD_LEFT);
+        $chk = $db->prepare("SELECT COUNT(*) FROM {$table} WHERE matricule=?");
+        $chk->execute([$candidate]);
+    } while ((int)$chk->fetchColumn() > 0);
+    return $candidate;
 }
 
 function getActiveAnnee(): ?array {

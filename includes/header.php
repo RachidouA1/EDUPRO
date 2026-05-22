@@ -20,8 +20,11 @@ $csrf = generateCsrfToken();
   <link href="<?= APP_URL ?>/assets/css/style.css" rel="stylesheet">
   <!-- Dynamic theme (from parametres) -->
   <?php
-  $themePrimary = h(getParam('theme_couleur_primaire', '#1a73e8'));
-  $themeSidebar = h(getParam('theme_couleur_sidebar',  '#0f2d5c'));
+  $themePrimary = getParam('theme_couleur_primaire', '#1a73e8');
+  $themeSidebar = getParam('theme_couleur_sidebar',  '#0f2d5c');
+  // Valider les codes hex pour éviter toute injection CSS
+  if (!preg_match('/^#[0-9A-Fa-f]{6}$/', $themePrimary)) $themePrimary = '#1a73e8';
+  if (!preg_match('/^#[0-9A-Fa-f]{6}$/', $themeSidebar))  $themeSidebar = '#0f2d5c';
   ?>
   <style>
     :root {

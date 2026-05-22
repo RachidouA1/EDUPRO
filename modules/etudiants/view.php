@@ -46,14 +46,20 @@ $recentPay = $db->prepare("
 $recentPay->execute([$id]);
 $recentPaiements = $recentPay->fetchAll();
 
-// Notes/moyennes
+// Notes/moyennes — LEFT JOIN pour inclure les notes sans semestre_id (niv.sup, ASB/VP)
 $notesStmt = $db->prepare("
-    SELECT n.*, m.nom as matiere_nom, m.coefficient, s.nom as semestre_nom
+    SELECT n.*, m.nom as matiere_nom, m.coefficient,
+           COALESCE(s.nom,
+               CASE WHEN m.semestre_num IS NOT NULL
+                    THEN CONCAT('Semestre ', m.semestre_num)
+                    ELSE 'Sans semestre'
+               END
+           ) as semestre_nom
     FROM notes n
     JOIN matieres m ON m.id = n.matiere_id
-    JOIN semestres s ON s.id = n.semestre_id
-    WHERE n.etudiant_id = ?
-    ORDER BY s.id, m.nom
+    LEFT JOIN semestres s ON s.id = n.semestre_id
+    WHERE n.etudiant_id = ? AND n.session = 1
+    ORDER BY COALESCE(s.id, 999), m.semestre_num, m.nom
 ");
 $notesStmt->execute([$id]);
 $notes = $notesStmt->fetchAll();

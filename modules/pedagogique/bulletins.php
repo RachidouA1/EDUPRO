@@ -99,7 +99,7 @@ if ($hasData) {
             FROM notes n
             JOIN matieres m ON m.id = n.matiere_id
             WHERE n.etudiant_id=? AND n.annee_id=?
-              AND (n.semestre_id=? OR n.semestre_id IS NULL)
+              AND n.semestre_id=?
               AND n.session=?
             ORDER BY m.nom
         ");

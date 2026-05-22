@@ -57,8 +57,6 @@ if (isset($_GET['delete_annee']) && isset($_GET['csrf']) && hasRole('admin') && 
         setFlash('error', 'Impossible de supprimer l\'année active.');
     } else {
         // Vérifier si des notes existent pour cette année
-        $nbNotes = (int)$db->prepare("SELECT COUNT(*) FROM notes WHERE annee_id=?")->execute([$id]) ?
-                   $db->query("SELECT COUNT(*) FROM notes WHERE annee_id=$id")->fetchColumn() : 0;
         $chkN = $db->prepare("SELECT COUNT(*) FROM notes WHERE annee_id=?");
         $chkN->execute([$id]);
         $nbNotes = (int)$chkN->fetchColumn();

@@ -46,14 +46,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && hasRole(['admin', 'directeur'])) {
         if (empty($nom))  $errors[] = 'Le nom est obligatoire.';
 
         if (empty($errors)) {
+            // niveau_superieur = 1 si tronc commun lui-même OU filière rattachée à un tronc commun (INF/SF)
+            $niveauSuperieur = ($troncCommun || $troncCommunId) ? 1 : 0;
             if ($editId) {
-                $db->prepare("UPDATE filieres SET code=?,nom=?,description=?,duree_annees=?,tronc_commun=?,tronc_commun_id=? WHERE id=?")
-                   ->execute([$code, $nom, $description ?: null, $duree, $troncCommun, $troncCommunId, $editId]);
+                $db->prepare("UPDATE filieres SET code=?,nom=?,description=?,duree_annees=?,tronc_commun=?,tronc_commun_id=?,niveau_superieur=? WHERE id=?")
+                   ->execute([$code, $nom, $description ?: null, $duree, $troncCommun, $troncCommunId, $niveauSuperieur, $editId]);
                 setFlash('success', 'Filière modifiée.');
             } else {
                 try {
-                    $db->prepare("INSERT INTO filieres (code,nom,description,duree_annees,tronc_commun,tronc_commun_id) VALUES (?,?,?,?,?,?)")
-                       ->execute([$code, $nom, $description ?: null, $duree, $troncCommun, $troncCommunId]);
+                    $db->prepare("INSERT INTO filieres (code,nom,description,duree_annees,tronc_commun,tronc_commun_id,niveau_superieur) VALUES (?,?,?,?,?,?,?)")
+                       ->execute([$code, $nom, $description ?: null, $duree, $troncCommun, $troncCommunId, $niveauSuperieur]);
                     $newId = $db->lastInsertId();
 
                     // Auto-create levels
