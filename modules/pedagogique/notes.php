@@ -15,11 +15,14 @@ try { $db->exec("UPDATE filieres SET niveau_superieur=1 WHERE tronc_commun=1 OR 
 try { $db->exec("ALTER TABLE semestres ADD COLUMN niveau_superieur TINYINT(1) NOT NULL DEFAULT 0"); } catch (PDOException $e) {}
 try { $db->exec("ALTER TABLE semestres ADD COLUMN semestre_num TINYINT NULL"); } catch (PDOException $e) {}
 
-$anneeId    = (int)($_GET['annee_id']    ?? getActiveAnnee()['id'] ?? 0);
-$semestreId = (int)($_GET['semestre_id'] ?? 0);
-$matiereId  = (int)($_GET['matiere_id']  ?? 0);
-$sessionNum = (int)($_GET['session']     ?? 1);
+$anneeId         = (int)($_GET['annee_id']    ?? getActiveAnnee()['id'] ?? 0);
+$semestreId      = (int)($_GET['semestre_id'] ?? 0);
+$matiereId       = (int)($_GET['matiere_id']  ?? 0);
+$sessionNum      = (int)($_GET['session']     ?? 1);
 if (!in_array($sessionNum, [1, 2])) $sessionNum = 1;
+$filterFiliereId = (int)($_GET['filiere_id']  ?? 0);
+$filterNiveauId  = (int)($_GET['niveau_id']   ?? 0);
+$filterUeId      = (int)($_GET['ue_id']       ?? 0);
 $errors = [];
 $saved  = 0;
 
@@ -90,7 +93,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['notes'])) {
 
 // ── Build matière list ────────────────────────────────────────────────────────
 $mQuery = "SELECT m.*, f.nom as filiere_nom, f.code as filiere_code,
-                  f.niveau_superieur as filiere_niveau_sup, n.nom as niveau_nom
+                  f.niveau_superieur as filiere_niveau_sup,
+                  n.nom as niveau_nom, n.ordre as niveau_ordre
            FROM matieres m
            LEFT JOIN filieres f ON f.id=m.filiere_id
            LEFT JOIN niveaux  n ON n.id=m.niveau_id
@@ -107,6 +111,73 @@ $mQuery .= " ORDER BY f.nom, n.ordre, m.nom";
 $mStmt = $db->prepare($mQuery);
 $mStmt->execute($mParams);
 $matieres = $mStmt->fetchAll();
+
+// ── Build filter datasets (filières / niveaux / UEs) from loaded matières ────
+$_filieresMap    = [];
+$_niveauxSeen    = [];
+$niveauxByFiliereJs = [];
+
+foreach ($matieres as $_m) {
+    $fid = (int)$_m['filiere_id'];
+    if ($fid && !isset($_filieresMap[$fid])) {
+        $_filieresMap[$fid] = [
+            'id'               => $fid,
+            'code'             => $_m['filiere_code']       ?? '',
+            'nom'              => $_m['filiere_nom']        ?? '',
+            'niveau_superieur' => !empty($_m['filiere_niveau_sup']),
+        ];
+    }
+    $nid = (int)$_m['niveau_id'];
+    if ($fid && $nid && !isset($_niveauxSeen[$fid][$nid])) {
+        $_niveauxSeen[$fid][$nid] = true;
+        $niveauxByFiliereJs[$fid][] = [
+            'id'    => $nid,
+            'nom'   => $_m['niveau_nom']   ?? '',
+            'ordre' => (int)($_m['niveau_ordre'] ?? 0),
+        ];
+    }
+}
+usort($_filieresMap, fn($a, $b) => strcmp($a['nom'], $b['nom']));
+$filieresFilter = array_values($_filieresMap);
+foreach ($niveauxByFiliereJs as &$_nl) usort($_nl, fn($a, $b) => $a['ordre'] <=> $b['ordre']);
+unset($_nl);
+
+// Load UEs present in the loaded matières
+$_ueIds = array_values(array_unique(array_filter(array_column($matieres, 'ue_id'))));
+$uesForFilter = [];
+if (!empty($_ueIds)) {
+    $_ph  = implode(',', array_fill(0, count($_ueIds), '?'));
+    $_uSt = $db->prepare("SELECT id, code_ue, nom, filiere_id, semestre_num FROM ue WHERE id IN ($_ph) AND actif=1 ORDER BY filiere_id, semestre_num, code_ue");
+    $_uSt->execute($_ueIds);
+    $uesForFilter = $_uSt->fetchAll();
+}
+$uesByFiliereJs  = [];
+$filiereNivSupJs = [];
+foreach ($filieresFilter as $_f) {
+    $filiereNivSupJs[(int)$_f['id']] = (bool)$_f['niveau_superieur'];
+}
+foreach ($uesForFilter as $_u) {
+    if ($_u['filiere_id']) {
+        $uesByFiliereJs[(int)$_u['filiere_id']][] = [
+            'id'          => (int)$_u['id'],
+            'code_ue'     => $_u['code_ue'],
+            'nom'         => $_u['nom'],
+            'semestre_num'=> (int)$_u['semestre_num'],
+        ];
+    }
+}
+
+// Auto-dériver filière/niveau/UE depuis la matière sélectionnée
+if ($matiereId && !$filterFiliereId) {
+    foreach ($matieres as $_m) {
+        if ((int)$_m['id'] === $matiereId) {
+            $filterFiliereId = (int)$_m['filiere_id'];
+            $filterNiveauId  = (int)$_m['niveau_id'];
+            $filterUeId      = (int)($_m['ue_id'] ?? 0);
+            break;
+        }
+    }
+}
 
 // ── Semestre logic (ASB/VP et niveau supérieur = no semestre_id) ─────────────
 $matiereCodeMap   = [];
@@ -232,6 +303,54 @@ include APP_ROOT . '/includes/header.php';
           <span class="badge bg-info text-dark fs-sm" id="semestre_nivsup_label">–</span>
         </div>
       </div>
+      <!-- ── Filière ── -->
+      <div class="col-md-3">
+        <label class="form-label"><i class="fas fa-layer-group me-1 text-primary" style="font-size:.8rem"></i>Filière</label>
+        <select name="filiere_id" id="filter_filiere" class="form-select" onchange="onFiliereChange(this.value, false)">
+          <option value="">— Toutes les filières —</option>
+          <?php foreach ($filieresFilter as $ff): ?>
+            <option value="<?= $ff['id'] ?>"
+                    data-niv-sup="<?= $ff['niveau_superieur'] ? '1' : '0' ?>"
+                    <?= $filterFiliereId == $ff['id'] ? 'selected' : '' ?>>
+              <?= h($ff['code']) ?> – <?= h($ff['nom']) ?>
+              <?php if ($ff['niveau_superieur']): ?><small>(Niv. Sup.)</small><?php endif; ?>
+            </option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+
+      <!-- ── Niveau ── -->
+      <div class="col-md-2" id="filter_niveau_col">
+        <label class="form-label"><i class="fas fa-sort-numeric-up me-1 text-primary" style="font-size:.8rem"></i>Niveau</label>
+        <select name="niveau_id" id="filter_niveau" class="form-select" onchange="filterMatieres()">
+          <option value="">— Tous —</option>
+          <?php
+            // Pre-populate si filière déjà sélectionnée (rendu serveur)
+            if ($filterFiliereId && !empty($niveauxByFiliereJs[$filterFiliereId])):
+              foreach ($niveauxByFiliereJs[$filterFiliereId] as $fn):
+          ?>
+            <option value="<?= $fn['id'] ?>" <?= $filterNiveauId == $fn['id'] ? 'selected' : '' ?>><?= h($fn['nom']) ?></option>
+          <?php endforeach; endif; ?>
+        </select>
+      </div>
+
+      <!-- ── UE (niveau supérieur uniquement) ── -->
+      <div class="col-md-3" id="filter_ue_col" style="<?= ($filterFiliereId && !empty($filiereNivSupJs[$filterFiliereId])) ? '' : 'display:none' ?>">
+        <label class="form-label"><i class="fas fa-graduation-cap me-1 text-primary" style="font-size:.8rem"></i>Unité d'Enseignement</label>
+        <select name="ue_id" id="filter_ue" class="form-select" onchange="filterMatieres()">
+          <option value="">— Toutes les UE —</option>
+          <?php
+            if ($filterFiliereId && !empty($uesByFiliereJs[$filterFiliereId])):
+              foreach ($uesByFiliereJs[$filterFiliereId] as $fu):
+          ?>
+            <option value="<?= $fu['id'] ?>" <?= $filterUeId == $fu['id'] ? 'selected' : '' ?>>
+              S<?= $fu['semestre_num'] ?> · <?= h($fu['code_ue']) ?> – <?= h($fu['nom']) ?>
+            </option>
+          <?php endforeach; endif; ?>
+        </select>
+      </div>
+
+      <!-- ── Matière ── -->
       <div class="col-md-3">
         <label class="form-label">Matière</label>
         <select name="matiere_id" id="matiere_filter" class="form-select" onchange="onMatiereChange(this)">
@@ -240,7 +359,10 @@ include APP_ROOT . '/includes/header.php';
             <option value="<?= $m['id'] ?>" <?= $matiereId == $m['id'] ? 'selected' : '' ?>
               data-filiere-code="<?= h(strtoupper($m['filiere_code'] ?? '')) ?>"
               data-niv-sup="<?= !empty($m['filiere_niveau_sup']) ? '1' : '0' ?>"
-              data-sem-num="<?= (int)($m['semestre_num'] ?? 0) ?>">
+              data-sem-num="<?= (int)($m['semestre_num'] ?? 0) ?>"
+              data-filiere-id="<?= (int)$m['filiere_id'] ?>"
+              data-niveau-id="<?= (int)$m['niveau_id'] ?>"
+              data-ue-id="<?= (int)($m['ue_id'] ?? 0) ?>">
               <?= h($m['code']) ?> – <?= h($m['nom']) ?> (<?= h($m['filiere_code'] ?? '') ?> <?= h($m['niveau_nom'] ?? '') ?>)
             </option>
           <?php endforeach; ?>
@@ -260,9 +382,79 @@ include APP_ROOT . '/includes/header.php';
   </div>
 </div>
 
-<!-- semestre show/hide selon type de matière -->
+<!-- Filtres filière / niveau / UE + semestre -->
 <script>
-const NO_SEM_CODES_JS = ['ASB', 'VP'];
+const NO_SEM_CODES_JS    = ['ASB', 'VP'];
+const NIVEAUX_BY_FILIERE = <?= json_encode($niveauxByFiliereJs,  JSON_UNESCAPED_UNICODE) ?>;
+const UES_BY_FILIERE     = <?= json_encode($uesByFiliereJs,      JSON_UNESCAPED_UNICODE) ?>;
+const FILIERE_NIV_SUP    = <?= json_encode($filiereNivSupJs) ?>;
+const INIT_FILIERE_ID    = <?= $filterFiliereId ?>;
+const INIT_NIVEAU_ID     = <?= $filterNiveauId ?>;
+const INIT_UE_ID         = <?= $filterUeId ?>;
+
+function onFiliereChange(filiereId, preserveSelection) {
+    filiereId = parseInt(filiereId) || 0;
+    const niveauSel = document.getElementById('filter_niveau');
+    const ueSel     = document.getElementById('filter_ue');
+    const ueCol     = document.getElementById('filter_ue_col');
+
+    // Remplir niveaux
+    niveauSel.innerHTML = '<option value="">— Tous —</option>';
+    (NIVEAUX_BY_FILIERE[filiereId] || []).forEach(n => {
+        const opt = document.createElement('option');
+        opt.value       = n.id;
+        opt.textContent = n.nom;
+        niveauSel.appendChild(opt);
+    });
+
+    // Remplir UE si filière niveau supérieur
+    ueSel.innerHTML = '<option value="">— Toutes les UE —</option>';
+    if (filiereId && FILIERE_NIV_SUP[filiereId] && UES_BY_FILIERE[filiereId]) {
+        ueCol.style.display = '';
+        UES_BY_FILIERE[filiereId].forEach(u => {
+            const opt = document.createElement('option');
+            opt.value       = u.id;
+            opt.textContent = 'S' + u.semestre_num + ' · ' + u.code_ue + ' – ' + u.nom;
+            ueSel.appendChild(opt);
+        });
+    } else {
+        ueCol.style.display = 'none';
+    }
+
+    if (!preserveSelection) {
+        niveauSel.value = '';
+        ueSel.value     = '';
+    }
+    filterMatieres();
+}
+
+function filterMatieres() {
+    const filiereId = parseInt(document.getElementById('filter_filiere')?.value) || 0;
+    const niveauId  = parseInt(document.getElementById('filter_niveau')?.value)  || 0;
+    const ueCol     = document.getElementById('filter_ue_col');
+    const ueSel     = document.getElementById('filter_ue');
+    const ueId      = (ueCol && ueCol.style.display !== 'none') ? (parseInt(ueSel?.value) || 0) : 0;
+    const matSel    = document.getElementById('matiere_filter');
+    if (!matSel) return;
+
+    Array.from(matSel.options).forEach(opt => {
+        if (!opt.value) { opt.hidden = false; return; }
+        const mFil = parseInt(opt.getAttribute('data-filiere-id')) || 0;
+        const mNiv = parseInt(opt.getAttribute('data-niveau-id'))  || 0;
+        const mUe  = parseInt(opt.getAttribute('data-ue-id'))      || 0;
+        let show = true;
+        if (filiereId && mFil !== filiereId) show = false;
+        if (niveauId  && mNiv !== niveauId)  show = false;
+        if (ueId      && mUe  !== ueId)      show = false;
+        opt.hidden = !show;
+    });
+
+    // Réinitialiser la matière si elle est masquée
+    if (matSel.selectedOptions[0]?.hidden) {
+        matSel.value = '';
+        onMatiereChange(matSel);
+    }
+}
 
 function onMatiereChange(sel) {
   const opt      = sel ? sel.options[sel.selectedIndex] : null;
@@ -295,8 +487,19 @@ function onMatiereChange(sel) {
 }
 
 document.addEventListener('DOMContentLoaded', function () {
-  const mSel = document.getElementById('matiere_filter');
-  if (mSel) onMatiereChange(mSel);
+    // Initialiser les dropdowns filière / niveau / UE
+    const fSel = document.getElementById('filter_filiere');
+    if (fSel && INIT_FILIERE_ID) {
+        fSel.value = INIT_FILIERE_ID;
+        onFiliereChange(INIT_FILIERE_ID, true); // peuple niveaux + UE
+        const nSel = document.getElementById('filter_niveau');
+        if (nSel && INIT_NIVEAU_ID) nSel.value = INIT_NIVEAU_ID;
+        const uSel = document.getElementById('filter_ue');
+        if (uSel && INIT_UE_ID)    uSel.value = INIT_UE_ID;
+    }
+    filterMatieres();
+    const mSel = document.getElementById('matiere_filter');
+    if (mSel) onMatiereChange(mSel);
 });
 </script>
 
