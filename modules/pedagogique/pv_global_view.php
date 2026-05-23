@@ -307,7 +307,7 @@ foreach ($ues as $ue) {
   <div class="tbl-wrap">
     <table class="tbl-pv">
       <thead>
-        <!-- Ligne 1 : N° / Matricule / Étudiant + en-têtes UE -->
+        <!-- Ligne 1 : N° / Matricule / Étudiant + en-têtes UE + Résultats -->
         <tr class="ue-head">
           <th rowspan="2" style="min-width:26px;width:26px">N°</th>
           <th rowspan="2" style="min-width:70px">Matricule</th>
@@ -318,10 +318,9 @@ foreach ($ues as $ue) {
               <?= h($ue['code_ue']) ?> – <?= h($ue['nom']) ?>
             </th>
           <?php endforeach; ?>
-          <th rowspan="2" style="min-width:44px" class="ue-sep">Moy.<br>Gén.</th>
-          <th rowspan="2" style="min-width:70px">Décision</th>
+          <th colspan="2" class="ue-sep" style="min-width:120px">Résultats</th>
         </tr>
-        <!-- Ligne 2 : noms de matières (tournés) + Moy UE -->
+        <!-- Ligne 2 : noms de matières (tournés) + Moy UE + Moy. Gén. + Décision -->
         <tr class="mat-head">
           <?php foreach ($ues as $ueIdx => $ue): ?>
             <?php foreach ($matieres_by_ue[$ue['id']]??[] as $mIdx => $m): ?>
@@ -335,6 +334,8 @@ foreach ($ues as $ue) {
             <?php endif; ?>
             <th class="moy-ue-col">Moy<br>UE</th>
           <?php endforeach; ?>
+          <th class="moy-gen-col ue-sep" style="min-width:44px;color:#fff;background:#1a5276">Moy.<br>Gén.</th>
+          <th class="dec-col" style="min-width:70px;color:#fff;background:#1a5276">Décision</th>
         </tr>
       </thead>
       <tbody>

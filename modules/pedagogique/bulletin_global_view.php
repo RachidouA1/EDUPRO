@@ -144,7 +144,7 @@ if (isset($_GET['export_excel'])) {
     header('Content-Disposition: attachment; filename="' . $fname . '"');
     header('Cache-Control: max-age=0');
 
-    $nb_cols = count($matieres) + 5;
+    $nb_cols = count($matieres) + 6;
     echo '<html><head><meta charset="UTF-8"></head><body>';
     echo '<table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;font-size:11px">';
 
@@ -161,7 +161,7 @@ if (isset($_GET['export_excel'])) {
     foreach ($matieres as $m) {
         echo '<th>' . htmlspecialchars($m['nom']??'') . '<br><small>(' . $m['coefficient'] . ')</small></th>';
     }
-    echo '<th>Moyenne</th><th>Résultat</th></tr>';
+    echo '<th>Moyenne</th><th>Mention</th><th>Décision</th></tr>';
 
     foreach ($etudiants as $idx => $e) {
         $row_bg = ($idx % 2 === 0) ? '#fff' : '#f5f5f5';
@@ -171,14 +171,21 @@ if (isset($_GET['export_excel'])) {
         echo '<td>' . strtoupper($e['nom']??'') . ' ' . ucfirst($e['prenom']??'') . '</td>';
         foreach ($matieres as $m) {
             $note = $notes_index[$e['id']][$m['id']] ?? null;
-            $bg   = ($note !== null && $note >= 10) ? '#d4edda' : ($note !== null ? '#f8d7da' : '#fff');
+            $bg   = ($note !== null && $note >= 12) ? '#d4edda' : ($note !== null ? '#f8d7da' : '#fff');
             echo '<td style="text-align:center;background:' . $bg . '">' . ($note !== null ? number_format($note,1) : '–') . '</td>';
         }
         $moy = $moyennes[$e['id']];
-        $mbg = ($moy !== null && $moy >= 10) ? '#d4edda' : ($moy !== null ? '#f8d7da' : '#fff');
+        $mbg = ($moy !== null && $moy >= 12) ? '#d4edda' : ($moy !== null ? '#f8d7da' : '#fff');
         echo '<td style="text-align:center;font-weight:bold;background:' . $mbg . '">' . ($moy !== null ? number_format($moy,2) : '–') . '</td>';
-        $res = $moy === null ? '–' : ($moy >= 10 ? 'ADMIS' : 'AJOURNÉ');
-        echo '<td style="text-align:center;font-weight:bold;background:' . $mbg . '">' . $res . '</td>';
+        if ($moy === null)       $mention_xls = '–';
+        elseif ($moy >= 16)      $mention_xls = 'Très Bien';
+        elseif ($moy >= 14)      $mention_xls = 'Bien';
+        elseif ($moy >= 12)      $mention_xls = 'Assez Bien';
+        elseif ($moy >= 10)      $mention_xls = 'Passable';
+        else                     $mention_xls = 'Insuffisant';
+        $decision_xls = $moy === null ? '–' : ($moy >= 12 ? 'VALIDÉ' : 'AJOURNÉ');
+        echo '<td style="text-align:center;font-weight:bold">' . $mention_xls . '</td>';
+        echo '<td style="text-align:center;font-weight:bold;background:' . $mbg . '">' . $decision_xls . '</td>';
         echo '</tr>';
     }
 
@@ -292,7 +299,8 @@ if (isset($_GET['export_excel'])) {
             </th>
           <?php endforeach; ?>
           <th style="min-width:60px">Moy.</th>
-          <th style="min-width:70px">Résultat</th>
+          <th style="min-width:80px">Mention</th>
+          <th style="min-width:80px">Décision</th>
         </tr>
       </thead>
       <tbody>
@@ -303,7 +311,7 @@ if (isset($_GET['export_excel'])) {
           <td class="etu-col"><?= strtoupper(h($e['nom'])) ?> <?= ucfirst(h($e['prenom'])) ?></td>
           <?php foreach ($matieres as $m):
             $note = $notes_index[$e['id']][$m['id']] ?? null;
-            $cls  = ($note !== null && $note >= 10) ? 'nv' : ($note !== null ? 'nnv' : '');
+            $cls  = ($note !== null && $note >= 12) ? 'nv' : ($note !== null ? 'nnv' : '');
           ?>
             <td class="<?= $cls ?>">
               <?= $note !== null ? number_format($note,1) : '–' ?>
@@ -311,17 +319,23 @@ if (isset($_GET['export_excel'])) {
           <?php endforeach; ?>
           <?php
             $moy     = $moyennes[$e['id']];
-            $moy_cls = ($moy !== null && $moy >= 10) ? 'nv' : ($moy !== null ? 'nnv' : '');
+            $moy_cls = ($moy !== null && $moy >= 12) ? 'nv' : ($moy !== null ? 'nnv' : '');
+            if ($moy === null)       $mention = '–';
+            elseif ($moy >= 16)      $mention = 'Très Bien';
+            elseif ($moy >= 14)      $mention = 'Bien';
+            elseif ($moy >= 12)      $mention = 'Assez Bien';
+            elseif ($moy >= 10)      $mention = 'Passable';
+            else                     $mention = 'Insuffisant';
+            $decision = $moy === null ? '–' : ($moy >= 12 ? 'VALIDÉ' : 'AJOURNÉ');
           ?>
           <td class="<?= $moy_cls ?> moy-cell">
             <?= $moy !== null ? number_format($moy,2) : '–' ?>
           </td>
+          <td class="moy-cell" style="font-size:10px">
+            <?= $mention ?>
+          </td>
           <td class="<?= $moy_cls ?> moy-cell">
-            <?php
-              if ($moy === null)   echo '–';
-              elseif ($moy >= 10)  echo 'ADMIS';
-              else                 echo 'AJOURNÉ';
-            ?>
+            <?= $decision ?>
           </td>
         </tr>
         <?php endforeach; ?>

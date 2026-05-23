@@ -82,7 +82,8 @@ if ($hasData) {
         $notesStmt = $db->prepare("
             SELECT n.*, m.nom as matiere_nom, m.code as matiere_code, m.coefficient,
                    COALESCE(m.seuil_reussite, 10) as seuil_reussite,
-                   m.ue_id, u.nom as ue_nom, u.code_ue as ue_code
+                   m.ue_id, u.nom as ue_nom, u.code_ue as ue_code,
+                   COALESCE(u.coefficient, 1) as ue_coefficient
             FROM notes n
             JOIN matieres m ON m.id = n.matiere_id
             LEFT JOIN ue u ON u.id = m.ue_id
@@ -114,7 +115,12 @@ if ($hasData) {
             $ueId = (int)($n['ue_id'] ?? 0);
             if ($ueId) {
                 if (!isset($tmpUeGroups[$ueId])) {
-                    $tmpUeGroups[$ueId] = ['code' => $n['ue_code'] ?? '', 'nom' => $n['ue_nom'] ?? '', 'notes' => []];
+                    $tmpUeGroups[$ueId] = [
+                        'code'           => $n['ue_code']        ?? '',
+                        'nom'            => $n['ue_nom']         ?? '',
+                        'ue_coefficient' => (float)($n['ue_coefficient'] ?? 1),
+                        'notes'          => [],
+                    ];
                 }
                 $tmpUeGroups[$ueId]['notes'][] = &$n;
             } else {
@@ -124,17 +130,21 @@ if ($hasData) {
         unset($n);
 
         foreach ($tmpUeGroups as $ueId => &$ug) {
-            $pts = 0; $coef = 0; $hasElim = false;
+            $pts = 0; $coef = 0; $hasElim = false; $elimMatieres = [];
             foreach ($ug['notes'] as $n) {
                 $nf = $n['note_finale'] !== null ? (float)$n['note_finale'] : null;
                 if ($nf !== null) {
                     $pts  += $nf * (float)$n['coefficient'];
                     $coef += (float)$n['coefficient'];
-                    if ($nf <= 5) $hasElim = true;
+                    if ($nf <= 5) {
+                        $hasElim       = true;
+                        $elimMatieres[] = ($n['matiere_nom'] ?? '?') . ' (' . number_format($nf, 2) . '/20)';
+                    }
                 }
             }
             $ueMoy = $coef > 0 ? round($pts / $coef, 2) : null;
             $ueVal = !$hasElim && $ueMoy !== null && $ueMoy >= 10;
+            $ug['elim_matieres'] = $elimMatieres;
             $ug['moyenne']  = $ueMoy;
             $ug['validee']  = $ueVal;
             $ug['has_elim'] = $hasElim;
@@ -226,9 +236,9 @@ if ($hasData) {
 function nivSupStatutBadge(string $statut): string {
     return match($statut) {
         'valide'       => '<span style="background:#d4edda;color:#155724;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600">Validé</span>',
-        'eliminatoire' => '<span style="background:#f8d7da;color:#721c24;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600">Éliminatoire</span>',
+        'eliminatoire' => '<span style="background:#f8d7da;color:#721c24;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600">Éliminatoire – S2</span>',
         'compense'     => '<span style="background:#fff3cd;color:#856404;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600">Compensé</span>',
-        'a_repasser'   => '<span style="background:#e2e3e5;color:#383d41;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600">À repasser</span>',
+        'a_repasser'   => '<span style="background:#f8d7da;color:#721c24;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600">À repasser S2</span>',
         default        => '<span style="color:#999">–</span>',
     };
 }
@@ -281,14 +291,16 @@ if (isset($_GET['export_excel']) && $etudiant && !empty($notes)) {
                 echo '<td style="text-align:center">' . ($n['note_exam'] !== null ? number_format($n['note_exam'],2) : '–') . '</td>';
                 echo '<td style="text-align:center;font-weight:bold">' . ($n['note_finale'] !== null ? number_format($n['note_finale'],2) : '–') . '</td>';
                 $statutLabel = match($n['niv_sup_statut'] ?? '') {
-                    'valide' => 'Validé', 'eliminatoire' => 'Éliminatoire',
-                    'compense' => 'Compensé', 'a_repasser' => 'À repasser', default => '–',
+                    'valide' => 'Validé', 'eliminatoire' => 'Éliminatoire – S2',
+                    'compense' => 'Compensé', 'a_repasser' => 'À repasser S2', default => '–',
                 };
                 echo '<td style="text-align:center">' . $statutLabel . '</td>';
                 echo '</tr>';
             }
             $ueMoyStr = $ug['moyenne'] !== null ? number_format($ug['moyenne'],2).'/20' : '–';
-            $ueRes    = $ug['validee'] ? 'UE VALIDÉE' : 'UE NON VALIDÉE';
+            if ($ug['validee'])            $ueRes = 'UE VALIDÉE';
+            elseif ($ug['has_elim'])       $ueRes = 'UE NON VALIDÉE – Note éliminatoire : ' . implode(', ', $ug['elim_matieres']);
+            else                           $ueRes = 'UE NON VALIDÉE';
             echo '<tr style="background:' . $ueValBg . ';font-weight:bold"><td colspan="5" style="text-align:right">Moy. UE ' . htmlspecialchars($ug['code']) . ' :</td><td style="text-align:center">' . $ueMoyStr . '</td><td style="text-align:center">' . $ueRes . '</td></tr>';
         }
         if (!empty($noUeNotes)) {
@@ -690,11 +702,14 @@ if (!$print) {
               </td>
               <td style="font-size:10px">
                 <?php if ($ug['has_elim']): ?>
-                  <span style="background:#f8d7da;color:#721c24;padding:2px 6px;border-radius:8px">Non validée (élim.)</span>
+                  <span style="background:#f8d7da;color:#721c24;padding:2px 6px;border-radius:8px">
+                    UE Non validée – note éliminatoire :
+                    <?= implode(', ', array_map('htmlspecialchars', $ug['elim_matieres'])) ?>
+                  </span>
                 <?php elseif ($ug['validee']): ?>
                   <span style="background:#d4edda;color:#155724;padding:2px 6px;border-radius:8px">UE Validée</span>
                 <?php else: ?>
-                  <span style="background:#f8d7da;color:#721c24;padding:2px 6px;border-radius:8px">UE Non validée</span>
+                  <span style="background:#f8d7da;color:#721c24;padding:2px 6px;border-radius:8px">UE Non validée – matières &lt;10 à repasser S2</span>
                 <?php endif; ?>
               </td>
             </tr>
@@ -842,9 +857,9 @@ if (!$print) {
     <!-- Légende compensation -->
     <div class="d-flex gap-2 flex-wrap mb-2" style="font-size:.78rem">
       <span class="badge bg-success">≥10 Validé</span>
-      <span class="badge bg-warning text-dark">6-9 + moy. UE ≥10 → Compensé</span>
-      <span class="badge bg-danger">≤5 Éliminatoire</span>
-      <span class="badge bg-secondary">À repasser</span>
+      <span class="badge bg-warning text-dark">6–9 + UE ≥10 → Compensé</span>
+      <span class="badge bg-danger">≤5 Éliminatoire – à repasser S2</span>
+      <span class="badge bg-danger">&lt;10 + UE &lt;10 → À repasser S2</span>
     </div>
     <?php endif; ?>
     <table class="table table-bordered" style="font-size:.88rem">
@@ -879,9 +894,9 @@ if (!$print) {
               <td class="text-center"><?php
                 echo match($statut) {
                     'valide'       => '<span class="badge bg-success">Validé</span>',
-                    'eliminatoire' => '<span class="badge bg-danger">Éliminatoire</span>',
+                    'eliminatoire' => '<span class="badge bg-danger">Éliminatoire – S2</span>',
                     'compense'     => '<span class="badge bg-warning text-dark">Compensé</span>',
-                    'a_repasser'   => '<span class="badge bg-secondary">À repasser</span>',
+                    'a_repasser'   => '<span class="badge bg-danger">À repasser S2</span>',
                     default        => '<span class="text-muted">–</span>',
                 };
               ?></td>
@@ -894,11 +909,13 @@ if (!$print) {
               </td>
               <td class="text-center" style="font-size:.8rem">
                 <?php if ($ug['has_elim']): ?>
-                  <span class="badge bg-danger">Non validée (élim.)</span>
+                  <span class="badge bg-danger" title="<?= htmlspecialchars(implode(', ', $ug['elim_matieres'])) ?>">
+                    Note éliminatoire : <?= htmlspecialchars(implode(', ', $ug['elim_matieres'])) ?>
+                  </span>
                 <?php elseif ($ug['validee']): ?>
                   <span class="badge bg-success">UE Validée</span>
                 <?php else: ?>
-                  <span class="badge bg-danger">UE Non validée</span>
+                  <span class="badge bg-danger">UE Non validée – &lt;10 à repasser S2</span>
                 <?php endif; ?>
               </td>
             </tr>
@@ -919,7 +936,7 @@ if (!$print) {
               </td>
               <td class="text-center"><?php
                 $st = $n['niv_sup_statut'] ?? '';
-                echo match($st) { 'valide'=>'<span class="badge bg-success">Validé</span>', 'eliminatoire'=>'<span class="badge bg-danger">Éliminatoire</span>', 'compense'=>'<span class="badge bg-warning text-dark">Compensé</span>', 'a_repasser'=>'<span class="badge bg-secondary">À repasser</span>', default=>'–' };
+                echo match($st) { 'valide'=>'<span class="badge bg-success">Validé</span>', 'eliminatoire'=>'<span class="badge bg-danger">Éliminatoire – S2</span>', 'compense'=>'<span class="badge bg-warning text-dark">Compensé</span>', 'a_repasser'=>'<span class="badge bg-danger">À repasser S2</span>', default=>'–' };
               ?></td>
             </tr>
             <?php endforeach; ?>
