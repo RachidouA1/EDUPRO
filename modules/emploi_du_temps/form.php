@@ -335,6 +335,15 @@ include APP_ROOT . '/includes/header.php';
                 <i class="fas fa-coffee me-2"></i>Récréation — 10h00 à 10h30 (30 min)
               </td>
             </tr>
+            <?php endif;
+              if ($debut === '14:00'):
+            ?>
+            <tr>
+              <td colspan="<?= count($JOURS) + 1 ?>"
+                  style="background:#e3f2fd;text-align:center;padding:6px;font-size:.82rem;font-weight:600;color:#1565c0;border:1px solid #90caf9">
+                <i class="fas fa-utensils me-2"></i>Pause déjeuner — 12h30 à 14h00 (1h30)
+              </td>
+            </tr>
             <?php endif; ?>
             <tr>
               <td class="slot-time">

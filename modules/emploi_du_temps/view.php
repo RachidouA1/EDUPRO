@@ -343,6 +343,14 @@ include APP_ROOT . '/includes/header.php';
             </td>
           </tr>
           <?php endif; ?>
+          <?php if ($debut === '14:00'): ?>
+          <tr class="et-pause">
+            <td colspan="<?= count($JOURS) + 1 ?>"
+                style="background:#e3f2fd;text-align:center;padding:7px 8px;font-weight:600;font-size:.82rem;color:#1565c0;border:1px solid #90caf9">
+              <i class="fas fa-utensils me-2"></i>Pause déjeuner &mdash; 12h30 à 14h00 &nbsp;(1h30)
+            </td>
+          </tr>
+          <?php endif; ?>
           <tr>
             <td class="et-time"><?= $debut ?><br><small>↕</small><br><?= $fin ?></td>
             <?php foreach ($JOURS as $jour):
