@@ -67,6 +67,19 @@ $niveaux     = getNiveaux($activeFiliereId ?: null);
 $annees      = getAnneesAcademiques();
 $enseignants = $db->query("SELECT id, nom, prenom, specialite FROM enseignants WHERE actif=1 ORDER BY nom")->fetchAll();
 
+$classes = [];
+if ($activeFiliereId) {
+    $cs = $db->prepare("
+        SELECT c.id, c.nom, c.niveau_id, n.nom as niveau_nom, n.ordre
+        FROM classes c
+        LEFT JOIN niveaux n ON n.id = c.niveau_id
+        WHERE c.filiere_id = ? AND c.actif = 1
+        ORDER BY COALESCE(n.ordre, 9999), c.nom
+    ");
+    $cs->execute([$activeFiliereId]);
+    $classes = $cs->fetchAll();
+}
+
 // ── Save ─────────────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrfToken($_POST['csrf'] ?? '')) {
@@ -74,26 +87,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $filiereId    = $coordFiliereId ?: (int)($_POST['filiere_id'] ?? 0);
         $niveauId     = (int)($_POST['niveau_id']  ?? 0) ?: null;
+        $classeId     = (int)($_POST['classe_id']  ?? 0) ?: null;
         $anneeId      = (int)($_POST['annee_id']   ?? 0) ?: null;
         $semaineDebut = sanitize($_POST['semaine_debut'] ?? '');
+        $semaineFin   = sanitize($_POST['semaine_fin']   ?? '');
         $soumettre    = isset($_POST['soumettre']);
 
-        if (!$filiereId)   $errors[] = 'Filière obligatoire.';
-        if (!$semaineDebut || !strtotime($semaineDebut)) $errors[] = 'Date de semaine invalide.';
+        if (!$filiereId)    $errors[] = 'Filière obligatoire.';
+        if (!$semaineDebut || !strtotime($semaineDebut)) $errors[] = 'Date de début invalide.';
+        if (!$semaineFin   || !strtotime($semaineFin))   $errors[] = 'Date de fin invalide.';
+        if (empty($errors) && $semaineFin < $semaineDebut) $errors[] = 'La date de fin doit être postérieure ou égale à la date de début.';
 
         if (empty($errors)) {
             $semaineDebut = date('Y-m-d', strtotime($semaineDebut));
-            $semaineFin   = date('Y-m-d', strtotime($semaineDebut.' +5 days'));
+            $semaineFin   = date('Y-m-d', strtotime($semaineFin));
             $statut       = $soumettre ? 'soumis' : 'brouillon';
 
             if ($editId) {
-                $db->prepare("UPDATE emplois_du_temps SET filiere_id=?,niveau_id=?,annee_id=?,semaine_debut=?,semaine_fin=?,statut=? WHERE id=?")
-                   ->execute([$filiereId, $niveauId, $anneeId, $semaineDebut, $semaineFin, $statut, $editId]);
+                $db->prepare("UPDATE emplois_du_temps SET filiere_id=?,niveau_id=?,classe_id=?,annee_id=?,semaine_debut=?,semaine_fin=?,statut=? WHERE id=?")
+                   ->execute([$filiereId, $niveauId, $classeId, $anneeId, $semaineDebut, $semaineFin, $statut, $editId]);
                 $emploiId = $editId;
                 $db->prepare("DELETE FROM emplois_slots WHERE emploi_id=?")->execute([$emploiId]);
             } else {
-                $db->prepare("INSERT INTO emplois_du_temps (filiere_id,niveau_id,annee_id,semaine_debut,semaine_fin,statut,created_by) VALUES (?,?,?,?,?,?,?)")
-                   ->execute([$filiereId, $niveauId, $anneeId, $semaineDebut, $semaineFin, $statut, $user['id']]);
+                $db->prepare("INSERT INTO emplois_du_temps (filiere_id,niveau_id,classe_id,annee_id,semaine_debut,semaine_fin,statut,created_by) VALUES (?,?,?,?,?,?,?,?)")
+                   ->execute([$filiereId, $niveauId, $classeId, $anneeId, $semaineDebut, $semaineFin, $statut, $user['id']]);
                 $emploiId = (int)$db->lastInsertId();
             }
 
@@ -202,7 +219,7 @@ include APP_ROOT . '/includes/header.php';
 
         <div class="col-md-3">
           <label class="form-label">Niveau</label>
-          <select name="niveau_id" id="f_niveau" class="form-select">
+          <select name="niveau_id" id="f_niveau" class="form-select" onchange="filterClasses(parseInt(this.value)||0)">
             <option value="">-- Tous niveaux --</option>
             <?php foreach ($niveaux as $n): ?>
               <option value="<?= $n['id'] ?>" <?= ($emploi['niveau_id'] ?? 0) == $n['id'] ? 'selected':'' ?>>
@@ -211,6 +228,26 @@ include APP_ROOT . '/includes/header.php';
             <?php endforeach; ?>
           </select>
         </div>
+
+        <?php if (!empty($classes)): ?>
+        <div class="col-md-3">
+          <label class="form-label">
+            <i class="fas fa-chalkboard me-1 text-primary" style="font-size:.85rem"></i>Classe
+          </label>
+          <select name="classe_id" id="f_classe" class="form-select">
+            <option value="">— Toutes les classes —</option>
+            <?php foreach ($classes as $c): ?>
+              <option value="<?= $c['id'] ?>"
+                      data-niveau="<?= (int)$c['niveau_id'] ?>"
+                      <?= ($emploi['classe_id'] ?? 0) == $c['id'] ? 'selected' : '' ?>>
+                <?= h($c['nom']) ?>
+                <?= $c['niveau_nom'] ? ' · '.h($c['niveau_nom']) : '' ?>
+              </option>
+            <?php endforeach; ?>
+          </select>
+          <div class="form-text">La filière a des classes définies.</div>
+        </div>
+        <?php endif; ?>
 
         <div class="col-md-3">
           <label class="form-label">Année académique</label>
@@ -225,12 +262,22 @@ include APP_ROOT . '/includes/header.php';
           </select>
         </div>
 
-        <div class="col-md-2">
-          <label class="form-label">Semaine (Lundi) <span class="text-danger">*</span></label>
+        <div class="col-6 col-md-2">
+          <label class="form-label">Date de début <span class="text-danger">*</span></label>
           <input type="date" name="semaine_debut" id="semaine_debut" class="form-control" required
                  value="<?= h($emploi['semaine_debut'] ?? '') ?>"
-                 onchange="updateWeekDisplay()">
-          <small class="text-muted mt-1 d-block" id="week_range">–</small>
+                 onchange="updateRangeDisplay()">
+        </div>
+
+        <div class="col-6 col-md-2">
+          <label class="form-label">Date de fin <span class="text-danger">*</span></label>
+          <input type="date" name="semaine_fin" id="semaine_fin" class="form-control" required
+                 value="<?= h($emploi['semaine_fin'] ?? '') ?>"
+                 onchange="updateRangeDisplay()">
+        </div>
+
+        <div class="col-12">
+          <div id="range_display" class="text-muted" style="font-size:.83rem;min-height:1.2em">–</div>
         </div>
       </div>
     </div>
@@ -357,27 +404,44 @@ include APP_ROOT . '/includes/header.php';
 <script>
 const JOURS_ORDER = <?= json_encode(array_values($JOURS)) ?>;
 
-function updateWeekDisplay() {
-    const val = document.getElementById('semaine_debut').value;
-    const display = document.getElementById('week_range');
-    if (!val) { display.textContent = '–'; return; }
-    const mon = new Date(val + 'T00:00:00');
-    const sat = new Date(mon.getTime() + 5 * 86400000);
-    const fmt = d => d.toLocaleDateString('fr-FR', {day:'2-digit',month:'2-digit',year:'numeric'});
-    display.textContent = 'Du ' + fmt(mon) + ' au ' + fmt(sat);
-    // Update table day headers
+function updateRangeDisplay() {
+    const debVal = document.getElementById('semaine_debut').value;
+    const finVal = document.getElementById('semaine_fin').value;
+    const display = document.getElementById('range_display');
+    const finInput = document.getElementById('semaine_fin');
+
+    if (debVal) finInput.min = debVal;
+
+    if (!debVal) { display.innerHTML = '–'; return; }
+    const debDate = new Date(debVal + 'T00:00:00');
+
+    // Mise à jour des en-têtes de colonnes avec les dates de la première semaine
     document.querySelectorAll('.day-header').forEach((th, i) => {
-        const d = new Date(mon.getTime() + i * 86400000);
-        const dayFmt = d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'});
+        const d = new Date(debDate.getTime() + i * 86400000);
+        const dayFmt = d.toLocaleDateString('fr-FR', {day:'2-digit', month:'2-digit'});
         const extra = th.querySelector('div:last-child');
         const name  = th.querySelector('.day-name');
         if (name) {
-            th.innerHTML = '';
             th.innerHTML = '<span class="day-name">' + name.textContent + '</span>'
                          + '<div style="font-size:.75rem;opacity:.7">' + dayFmt + '</div>'
                          + (extra ? extra.outerHTML : '');
         }
     });
+
+    const fmt = d => d.toLocaleDateString('fr-FR', {day:'2-digit', month:'long', year:'numeric'});
+    if (!finVal) {
+        display.innerHTML = '<i class="fas fa-calendar-day me-1"></i>Début : <strong>' + fmt(debDate) + '</strong>';
+        return;
+    }
+    const finDate  = new Date(finVal + 'T00:00:00');
+    const diffDays = Math.round((finDate - debDate) / 86400000) + 1;
+    if (finDate < debDate) {
+        display.innerHTML = '<span class="text-danger"><i class="fas fa-exclamation-circle me-1"></i>La date de fin doit être après la date de début.</span>';
+        return;
+    }
+    display.innerHTML = '<i class="fas fa-calendar-alt me-1 text-primary"></i>'
+        + 'Du <strong>' + fmt(debDate) + '</strong> au <strong>' + fmt(finDate) + '</strong>'
+        + ' &nbsp;<span class="badge bg-secondary">' + diffDays + ' jour' + (diffDays > 1 ? 's' : '') + '</span>';
 }
 
 function highlightCell(sel) {
@@ -389,6 +453,16 @@ function highlightCell(sel) {
     }
 }
 
+function filterClasses(niveauId) {
+    const sel = document.getElementById('f_classe');
+    if (!sel) return;
+    sel.querySelectorAll('option[data-niveau]').forEach(opt => {
+        const optNiv = parseInt(opt.getAttribute('data-niveau')) || 0;
+        opt.hidden = !!(niveauId && optNiv && optNiv !== niveauId);
+    });
+    if (sel.selectedOptions[0]?.hidden) sel.value = '';
+}
+
 function updateMatieres(filiereId) {
     if (!filiereId) return;
     // Reload page with new filière
@@ -398,9 +472,10 @@ function updateMatieres(filiereId) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    updateWeekDisplay();
-    // Highlight pre-filled cells
+    updateRangeDisplay();
     document.querySelectorAll('.matiere-sel').forEach(highlightCell);
+    const niveauSel = document.getElementById('f_niveau');
+    if (niveauSel) filterClasses(parseInt(niveauSel.value) || 0);
 });
 </script>
 

@@ -166,13 +166,6 @@ HTML;
       . '<a href="' . APP_URL . '/modules/emploi_du_temps/index.php" class="nav-link d-flex align-items-center justify-content-between' . isActive('/emploi_du_temps/') . '"><span><i class="fas fa-calendar-week"></i> Emplois du temps</span>' . $edtBadge . '</a>'
     ) ?>
 
-    <?= sidebarGroup('dir-finances', 'Finances', 'fa-chart-bar',
-        ['/comptabilite/'],
-        '<a href="' . APP_URL . '/modules/comptabilite/rapports.php" class="nav-link' . isActive('/comptabilite/rapports') . '"><i class="fas fa-chart-bar"></i> Rapports financiers</a>'
-      . '<a href="' . APP_URL . '/modules/comptabilite/recettes.php" class="nav-link' . isActive('/comptabilite/recettes') . '"><i class="fas fa-arrow-circle-down" style="color:#34a853"></i> Recettes</a>'
-      . '<a href="' . APP_URL . '/modules/comptabilite/depenses.php" class="nav-link' . isActive('/comptabilite/depenses') . '"><i class="fas fa-arrow-circle-up" style="color:#ea4335"></i> Dépenses</a>'
-    ) ?>
-
     <!-- ===== SCOLARITÉ ===== -->
     <?php elseif ($role === 'scolarite'): ?>
 
@@ -181,7 +174,6 @@ HTML;
         '<a href="' . APP_URL . '/modules/etudiants/index.php" class="nav-link' . isActive('/etudiants/index','/etudiants/view','/etudiants/edit','/etudiants/delete') . '"><i class="fas fa-user-graduate"></i> Liste des étudiants</a>'
       . '<a href="' . APP_URL . '/modules/etudiants/add.php" class="nav-link' . isActive('/etudiants/add') . '"><i class="fas fa-user-plus"></i> Nouvel étudiant</a>'
       . '<a href="' . APP_URL . '/modules/etudiants/promotion.php" class="nav-link' . isActive('/etudiants/promotion') . '"><i class="fas fa-level-up-alt"></i> Passage en classe sup.</a>'
-      . '<a href="' . APP_URL . '/modules/etudiants/paiements.php" class="nav-link' . isActive('/etudiants/paiements') . '"><i class="fas fa-receipt"></i> Paiements scolarité</a>'
     ) ?>
 
     <?= sidebarGroup('sco-pedagogie', 'Pédagogie', 'fa-book-open',
@@ -189,12 +181,6 @@ HTML;
         '<a href="' . APP_URL . '/modules/pedagogique/notes.php" class="nav-link' . isActive('/pedagogique/notes') . '"><i class="fas fa-edit"></i> Saisie des notes</a>'
       . '<a href="' . APP_URL . '/modules/pedagogique/bulletins.php" class="nav-link' . isActive('/pedagogique/bulletins') . '"><i class="fas fa-file-alt"></i> Bulletins de notes</a>'
       . '<a href="' . APP_URL . '/modules/pedagogique/pv.php" class="nav-link' . isActive('/pedagogique/pv') . '"><i class="fas fa-file-contract"></i> PV Supérieur</a>'
-    ) ?>
-
-    <?= sidebarGroup('sco-compta', 'Comptabilité', 'fa-coins',
-        ['/comptabilite/'],
-        '<a href="' . APP_URL . '/modules/comptabilite/recettes.php" class="nav-link' . isActive('/comptabilite/recettes') . '"><i class="fas fa-arrow-circle-down" style="color:#34a853"></i> Recettes</a>'
-      . '<a href="' . APP_URL . '/modules/comptabilite/recu.php" class="nav-link' . isActive('/comptabilite/recu') . '"><i class="fas fa-receipt"></i> Reçus de paiement</a>'
     ) ?>
 
     <!-- ===== ENSEIGNANT ===== -->

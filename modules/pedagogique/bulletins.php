@@ -1032,7 +1032,7 @@ if (!$print) {
         <select name="filiere_id" id="bg_filiere_id" class="form-select" required onchange="toggleBGFiliere(this)">
           <option value="">-- Sélectionner --</option>
           <?php foreach (getFilieres() as $f): ?>
-            <?php if (in_array($f['code'] ?? '', ['INF', 'SF'])) continue; ?>
+            <?php if (!empty($f['niveau_superieur'])) continue; // Exclure LSIO/TC, INF, SF ?>
             <option value="<?= $f['id'] ?>"
                     data-sans-semestre="<?= in_array($f['code'] ?? '', $SANS_SEMESTRE_CODES) ? '1' : '0' ?>">
               <?= h($f['code']) ?> – <?= h($f['nom']) ?>

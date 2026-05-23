@@ -14,8 +14,8 @@ $stats['etudiants']  = $db->query("SELECT COUNT(*) FROM etudiants WHERE statut='
 $stats['enseignants'] = $db->query("SELECT COUNT(*) FROM enseignants WHERE actif=1")->fetchColumn();
 $stats['filieres']   = $db->query("SELECT COUNT(*) FROM filieres WHERE actif=1")->fetchColumn();
 
-// ===== Stats financières (admin, directeur, comptable) =====
-$showFinance = in_array($role, ['admin', 'directeur', 'comptable']);
+// ===== Stats financières (admin, comptable uniquement — directeur exclu) =====
+$showFinance = in_array($role, ['admin', 'comptable']);
 if ($showFinance) {
     $stats['recettes_mois'] = $db->query("SELECT COALESCE(SUM(montant),0) FROM recettes WHERE MONTH(date_recette)=MONTH(NOW()) AND YEAR(date_recette)=YEAR(NOW())")->fetchColumn();
     $stats['depenses_mois'] = $db->query("SELECT COALESCE(SUM(montant),0) FROM depenses WHERE statut='approuvee' AND MONTH(date_depense)=MONTH(NOW()) AND YEAR(date_depense)=YEAR(NOW())")->fetchColumn();
@@ -564,6 +564,7 @@ include APP_ROOT . '/includes/header.php';
 
 <?php elseif ($role === 'scolarite'): /* ===== VUE SCOLARITÉ ===== */ ?>
 
+<!-- Stat Cards Scolarité -->
 <div class="row g-3 mb-4">
   <div class="col-6 col-md-3">
     <div class="stat-card stat-blue">
@@ -579,16 +580,7 @@ include APP_ROOT . '/includes/header.php';
       <div class="stat-icon"><i class="fas fa-layer-group"></i></div>
       <div class="stat-body">
         <div class="stat-value"><?= $stats['filieres'] ?></div>
-        <div class="stat-label">Filières</div>
-      </div>
-    </div>
-  </div>
-  <div class="col-6 col-md-3">
-    <div class="stat-card stat-purple">
-      <div class="stat-icon"><i class="fas fa-clock"></i></div>
-      <div class="stat-body">
-        <div class="stat-value"><?= number_format($stats['paiements_attente']) ?></div>
-        <div class="stat-label">Paiements en attente</div>
+        <div class="stat-label">Filières actives</div>
       </div>
     </div>
   </div>
@@ -603,55 +595,64 @@ include APP_ROOT . '/includes/header.php';
   </div>
 </div>
 
-<div class="row g-3">
-  <div class="col-12 col-lg-8">
-    <div class="card">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="fas fa-user-graduate me-2 text-primary"></i>Derniers inscrits</span>
-        <a href="<?= APP_URL ?>/modules/etudiants/index.php" class="btn btn-sm btn-outline-primary">Voir tout</a>
-      </div>
-      <div class="table-responsive">
-        <table class="table mb-0">
-          <thead><tr><th>Matricule</th><th>Nom & Prénom</th><th>Filière</th><th>Statut</th></tr></thead>
-          <tbody>
-            <?php foreach ($recentEtudiants as $e): ?>
-            <tr>
-              <td><code><?= h($e['matricule']) ?></code></td>
-              <td><?= h($e['nom'].' '.$e['prenom']) ?></td>
-              <td><span class="badge bg-primary bg-opacity-10 text-primary"><?= h($e['filiere_nom']??'-') ?></span></td>
-              <td><?php $sc=['actif'=>'success','transfere'=>'warning','exclu'=>'danger','diplome'=>'info'][$e['statut']]??'secondary'; ?>
-                <span class="badge bg-<?= $sc ?>"><?= ucfirst(h($e['statut'])) ?></span></td>
-            </tr>
-            <?php endforeach; ?>
-            <?php if (empty($recentEtudiants)): ?><tr><td colspan="4" class="text-center text-muted py-3">Aucun étudiant</td></tr><?php endif; ?>
-          </tbody>
-        </table>
+<!-- Charts Row Scolarité -->
+<div class="row g-3 mb-4">
+  <div class="col-12 col-lg-5">
+    <div class="card h-100">
+      <div class="card-header"><i class="fas fa-chart-pie me-2 text-primary"></i>Étudiants par filière</div>
+      <div class="card-body">
+        <div class="chart-container" style="height:200px"><canvas id="filiereChart"></canvas></div>
+        <div class="mt-3">
+          <?php foreach ($etudiantsFilieres as $ef): ?>
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <small class="text-muted"><?= h($ef['code']) ?></small>
+              <div class="flex-grow-1 mx-2">
+                <div class="progress" style="height:6px">
+                  <?php $pct = $stats['etudiants'] > 0 ? round($ef['total']/$stats['etudiants']*100) : 0; ?>
+                  <div class="progress-bar bg-primary" style="width:<?= $pct ?>%"></div>
+                </div>
+              </div>
+              <strong style="font-size:.85rem"><?= $ef['total'] ?></strong>
+            </div>
+          <?php endforeach; ?>
+        </div>
       </div>
     </div>
   </div>
-  <div class="col-12 col-lg-4">
-    <div class="card">
+
+  <div class="col-12 col-lg-7">
+    <div class="card h-100">
       <div class="card-header"><i class="fas fa-bolt me-2 text-warning"></i>Accès rapide</div>
       <div class="card-body">
         <div class="row g-2">
-          <div class="col-6">
+          <div class="col-6 col-md-4">
             <a href="<?= APP_URL ?>/modules/etudiants/add.php" class="btn btn-outline-primary w-100 text-start py-3">
               <i class="fas fa-user-plus d-block mb-1"></i><small>Nouvel étudiant</small>
             </a>
           </div>
-          <div class="col-6">
-            <a href="<?= APP_URL ?>/modules/etudiants/paiements.php" class="btn btn-outline-warning w-100 text-start py-3">
-              <i class="fas fa-receipt d-block mb-1"></i><small>Paiements</small>
+          <div class="col-6 col-md-4">
+            <a href="<?= APP_URL ?>/modules/etudiants/index.php" class="btn btn-outline-secondary w-100 text-start py-3">
+              <i class="fas fa-users d-block mb-1"></i><small>Liste étudiants</small>
             </a>
           </div>
-          <div class="col-6">
+          <div class="col-6 col-md-4">
+            <a href="<?= APP_URL ?>/modules/etudiants/promotion.php" class="btn btn-outline-warning w-100 text-start py-3">
+              <i class="fas fa-arrow-up d-block mb-1"></i><small>Promotion</small>
+            </a>
+          </div>
+          <div class="col-6 col-md-4">
             <a href="<?= APP_URL ?>/modules/pedagogique/notes.php" class="btn btn-outline-info w-100 text-start py-3">
               <i class="fas fa-edit d-block mb-1"></i><small>Saisir notes</small>
             </a>
           </div>
-          <div class="col-6">
-            <a href="<?= APP_URL ?>/modules/pedagogique/bulletins.php" class="btn btn-outline-secondary w-100 text-start py-3">
+          <div class="col-6 col-md-4">
+            <a href="<?= APP_URL ?>/modules/pedagogique/bulletins.php" class="btn btn-outline-dark w-100 text-start py-3">
               <i class="fas fa-file-alt d-block mb-1"></i><small>Bulletins</small>
+            </a>
+          </div>
+          <div class="col-6 col-md-4">
+            <a href="<?= APP_URL ?>/modules/pedagogique/pv.php" class="btn btn-outline-success w-100 text-start py-3">
+              <i class="fas fa-file-contract d-block mb-1"></i><small>PV Supérieur</small>
             </a>
           </div>
         </div>
@@ -660,7 +661,192 @@ include APP_ROOT . '/includes/header.php';
   </div>
 </div>
 
-<?php else: /* ===== VUE ADMIN / DIRECTEUR (full dashboard) ===== */ ?>
+<!-- Derniers inscrits Scolarité -->
+<div class="row g-3">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="fas fa-user-graduate me-2 text-primary"></i>Derniers inscrits</span>
+        <a href="<?= APP_URL ?>/modules/etudiants/index.php" class="btn btn-sm btn-outline-primary">Voir tout</a>
+      </div>
+      <div class="table-responsive">
+        <table class="table mb-0">
+          <thead><tr><th>Matricule</th><th>Nom & Prénom</th><th>Filière</th><th>Niveau</th><th>Statut</th></tr></thead>
+          <tbody>
+            <?php foreach ($recentEtudiants as $e): ?>
+            <tr>
+              <td><code><?= h($e['matricule']) ?></code></td>
+              <td>
+                <div class="d-flex align-items-center gap-2">
+                  <div class="avatar-circle" style="background:<?= $e['sexe']==='M' ? '#1a73e8' : '#e91e63' ?>;width:32px;height:32px;font-size:.75rem">
+                    <?= strtoupper(substr($e['prenom'],0,1).substr($e['nom'],0,1)) ?>
+                  </div>
+                  <div class="fw-600 fs-sm"><?= h($e['nom'].' '.$e['prenom']) ?></div>
+                </div>
+              </td>
+              <td><span class="badge bg-primary bg-opacity-10 text-primary"><?= h($e['filiere_nom']??'-') ?></span></td>
+              <td><small class="text-muted"><?= h($e['niveau_nom']??'-') ?></small></td>
+              <td><?php $sc=['actif'=>'success','transfere'=>'warning','exclu'=>'danger','diplome'=>'info'][$e['statut']]??'secondary'; ?>
+                <span class="badge bg-<?= $sc ?>"><?= ucfirst(h($e['statut'])) ?></span></td>
+            </tr>
+            <?php endforeach; ?>
+            <?php if (empty($recentEtudiants)): ?><tr><td colspan="5" class="text-center text-muted py-3">Aucun étudiant enregistré</td></tr><?php endif; ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<?php elseif ($role === 'directeur'): /* ===== VUE DIRECTEUR ===== */ ?>
+
+<!-- Stat Cards Directeur -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="stat-card stat-blue">
+      <div class="stat-icon"><i class="fas fa-user-graduate"></i></div>
+      <div class="stat-body">
+        <div class="stat-value"><?= number_format($stats['etudiants']) ?></div>
+        <div class="stat-label">Étudiants actifs</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card stat-green">
+      <div class="stat-icon"><i class="fas fa-chalkboard-teacher"></i></div>
+      <div class="stat-body">
+        <div class="stat-value"><?= number_format($stats['enseignants']) ?></div>
+        <div class="stat-label">Enseignants</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card stat-orange">
+      <div class="stat-icon"><i class="fas fa-layer-group"></i></div>
+      <div class="stat-body">
+        <div class="stat-value"><?= $stats['filieres'] ?></div>
+        <div class="stat-label">Filières actives</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card stat-purple">
+      <div class="stat-icon"><i class="fas fa-calendar-alt"></i></div>
+      <div class="stat-body">
+        <?php $anneeDir = getActiveAnnee(); ?>
+        <div class="stat-value" style="font-size:1rem"><?= $anneeDir ? h($anneeDir['libelle']) : '—' ?></div>
+        <div class="stat-label">Année en cours</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Charts & Lists Row Directeur -->
+<div class="row g-3 mb-4">
+  <div class="col-12 col-lg-5">
+    <div class="card h-100">
+      <div class="card-header"><i class="fas fa-chart-pie me-2 text-primary"></i>Étudiants par filière</div>
+      <div class="card-body">
+        <div class="chart-container" style="height:220px"><canvas id="filiereChart"></canvas></div>
+        <div class="mt-3">
+          <?php foreach ($etudiantsFilieres as $ef): ?>
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <small class="text-muted"><?= h($ef['code']) ?></small>
+              <div class="flex-grow-1 mx-2">
+                <div class="progress" style="height:6px">
+                  <?php $pct = $stats['etudiants'] > 0 ? round($ef['total']/$stats['etudiants']*100) : 0; ?>
+                  <div class="progress-bar" style="width:<?= $pct ?>%"></div>
+                </div>
+              </div>
+              <strong style="font-size:.85rem"><?= $ef['total'] ?></strong>
+            </div>
+          <?php endforeach; ?>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-7">
+    <div class="card h-100">
+      <div class="card-header"><i class="fas fa-bolt me-2 text-warning"></i>Accès rapide</div>
+      <div class="card-body">
+        <div class="row g-2">
+          <div class="col-6 col-md-4">
+            <a href="<?= APP_URL ?>/modules/etudiants/index.php" class="btn btn-outline-primary w-100 text-start py-3">
+              <i class="fas fa-user-graduate d-block mb-1"></i><small>Étudiants</small>
+            </a>
+          </div>
+          <div class="col-6 col-md-4">
+            <a href="<?= APP_URL ?>/modules/enseignants/index.php" class="btn btn-outline-success w-100 text-start py-3">
+              <i class="fas fa-chalkboard-teacher d-block mb-1"></i><small>Enseignants</small>
+            </a>
+          </div>
+          <div class="col-6 col-md-4">
+            <a href="<?= APP_URL ?>/modules/pedagogique/bulletins.php" class="btn btn-outline-secondary w-100 text-start py-3">
+              <i class="fas fa-file-alt d-block mb-1"></i><small>Bulletins</small>
+            </a>
+          </div>
+          <div class="col-6 col-md-4">
+            <a href="<?= APP_URL ?>/modules/pedagogique/pv_global_view.php" class="btn btn-outline-info w-100 text-start py-3">
+              <i class="fas fa-table d-block mb-1"></i><small>PV Supérieur</small>
+            </a>
+          </div>
+          <div class="col-6 col-md-4">
+            <a href="<?= APP_URL ?>/modules/etudiants/promotion.php" class="btn btn-outline-warning w-100 text-start py-3">
+              <i class="fas fa-arrow-up d-block mb-1"></i><small>Promotion</small>
+            </a>
+          </div>
+          <div class="col-6 col-md-4">
+            <a href="<?= APP_URL ?>/modules/pedagogique/notes.php" class="btn btn-outline-dark w-100 text-start py-3">
+              <i class="fas fa-edit d-block mb-1"></i><small>Notes</small>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Derniers inscrits Directeur -->
+<div class="row g-3">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="fas fa-user-graduate me-2 text-primary"></i>Derniers inscrits</span>
+        <a href="<?= APP_URL ?>/modules/etudiants/index.php" class="btn btn-sm btn-outline-primary">Voir tout</a>
+      </div>
+      <div class="table-responsive">
+        <table class="table mb-0">
+          <thead><tr><th>Matricule</th><th>Nom & Prénom</th><th>Filière</th><th>Niveau</th><th>Statut</th></tr></thead>
+          <tbody>
+            <?php foreach ($recentEtudiants as $e): ?>
+            <tr>
+              <td><code><?= h($e['matricule']) ?></code></td>
+              <td>
+                <div class="d-flex align-items-center gap-2">
+                  <div class="avatar-circle" style="background:<?= $e['sexe']==='M' ? '#1a73e8' : '#e91e63' ?>;width:32px;height:32px;font-size:.75rem">
+                    <?= strtoupper(substr($e['prenom'],0,1).substr($e['nom'],0,1)) ?>
+                  </div>
+                  <div class="fw-600 fs-sm"><?= h($e['nom'].' '.$e['prenom']) ?></div>
+                </div>
+              </td>
+              <td><span class="badge bg-primary bg-opacity-10 text-primary"><?= h($e['filiere_nom']??'-') ?></span></td>
+              <td><small class="text-muted"><?= h($e['niveau_nom']??'-') ?></small></td>
+              <td>
+                <?php $sc=['actif'=>'success','transfere'=>'warning','exclu'=>'danger','diplome'=>'info'][$e['statut']]??'secondary'; ?>
+                <span class="badge bg-<?= $sc ?>"><?= ucfirst(h($e['statut'])) ?></span>
+              </td>
+            </tr>
+            <?php endforeach; ?>
+            <?php if (empty($recentEtudiants)): ?><tr><td colspan="5" class="text-center text-muted py-3">Aucun étudiant enregistré</td></tr><?php endif; ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<?php elseif ($role === 'admin'): /* ===== VUE ADMIN (full dashboard) ===== */ ?>
 
 <!-- Stat Cards Row 1 -->
 <div class="row g-3 mb-4">

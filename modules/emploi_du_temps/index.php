@@ -35,6 +35,7 @@ try { $db->exec("
         FOREIGN KEY (emploi_id) REFERENCES emplois_du_temps(id) ON DELETE CASCADE
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
 "); } catch (PDOException $e) {}
+try { $db->exec("ALTER TABLE emplois_du_temps ADD COLUMN classe_id INT NULL"); } catch (PDOException $e) {}
 
 // Delete (brouillon only, own or admin)
 if (isset($_GET['action']) && $_GET['action'] === 'delete' && verifyCsrfToken($_GET['csrf'] ?? '')) {
@@ -65,10 +66,12 @@ if ($statusFilter && in_array($statusFilter, ['brouillon','soumis','approuve','r
 $stmt = $db->prepare("
     SELECT e.*, f.nom as filiere_nom, f.code as filiere_code,
            n.nom as niveau_nom, a.libelle as annee_libelle,
-           u.nom as createur_nom, u.prenom as createur_prenom
+           u.nom as createur_nom, u.prenom as createur_prenom,
+           cl.nom as classe_nom
     FROM emplois_du_temps e
     JOIN filieres f ON f.id = e.filiere_id
     LEFT JOIN niveaux n ON n.id = e.niveau_id
+    LEFT JOIN classes cl ON cl.id = e.classe_id
     LEFT JOIN annees_academiques a ON a.id = e.annee_id
     LEFT JOIN users u ON u.id = e.created_by
     WHERE " . implode(' AND ', $where) . "
@@ -160,7 +163,14 @@ include APP_ROOT . '/includes/header.php';
           </td>
           <td>
             <div class="fw-600"><?= h($e['filiere_code']) ?> – <?= h($e['filiere_nom']) ?></div>
-            <?php if ($e['niveau_nom']): ?><div class="text-muted fs-sm"><?= h($e['niveau_nom']) ?></div><?php endif; ?>
+            <?php if ($e['niveau_nom'] || $e['classe_nom']): ?>
+            <div class="text-muted fs-sm">
+              <?= $e['niveau_nom'] ? h($e['niveau_nom']) : '' ?>
+              <?php if ($e['classe_nom']): ?>
+                <?= $e['niveau_nom'] ? ' · ' : '' ?><i class="fas fa-chalkboard" style="font-size:.72rem"></i> <?= h($e['classe_nom']) ?>
+              <?php endif; ?>
+            </div>
+            <?php endif; ?>
           </td>
           <td class="fs-sm text-muted"><?= h($e['annee_libelle'] ?? '–') ?></td>
           <?php if (!hasRole('coordinateur')): ?>

@@ -13,12 +13,14 @@ $stmt = $db->prepare("
     SELECT e.*,
            f.nom as filiere_nom, f.code as filiere_code,
            n.nom as niveau_nom,
+           cl.nom as classe_nom,
            a.libelle as annee_libelle,
            u.nom as createur_nom, u.prenom as createur_prenom,
            ap.nom as approbateur_nom, ap.prenom as approbateur_prenom
     FROM emplois_du_temps e
     JOIN filieres f ON f.id = e.filiere_id
     LEFT JOIN niveaux n ON n.id = e.niveau_id
+    LEFT JOIN classes cl ON cl.id = e.classe_id
     LEFT JOIN annees_academiques a ON a.id = e.annee_id
     LEFT JOIN users u ON u.id = e.created_by
     LEFT JOIN users ap ON ap.id = e.approved_by
@@ -173,6 +175,7 @@ include APP_ROOT . '/includes/header.php';
   <div style="font-size:.85rem">
     <strong>Filière :</strong> <?= h($emploi['filiere_code'].' – '.$emploi['filiere_nom']) ?>
     <?php if ($emploi['niveau_nom']): ?> &nbsp;|&nbsp; <strong>Niveau :</strong> <?= h($emploi['niveau_nom']) ?><?php endif; ?>
+    <?php if ($emploi['classe_nom']): ?> &nbsp;|&nbsp; <strong>Classe :</strong> <?= h($emploi['classe_nom']) ?><?php endif; ?>
     &nbsp;|&nbsp; <strong>Semaine du</strong> <?= formatDate($emploi['semaine_debut']) ?> <strong>au</strong> <?= formatDate($emploi['semaine_fin']) ?>
     <?php if ($emploi['annee_libelle']): ?> &nbsp;|&nbsp; <strong>Année :</strong> <?= h($emploi['annee_libelle']) ?><?php endif; ?>
     &nbsp;|&nbsp; <strong>Coordinateur :</strong> <?= h(($emploi['createur_prenom']??'').' '.($emploi['createur_nom']??'')) ?>
@@ -189,7 +192,8 @@ include APP_ROOT . '/includes/header.php';
       </span>
       <span class="text-muted fs-sm">
         <?= h($emploi['filiere_code'].' – '.$emploi['filiere_nom']) ?>
-        <?= $emploi['niveau_nom'] ? '· '.h($emploi['niveau_nom']) : '' ?>
+        <?= $emploi['niveau_nom'] ? ' · '.h($emploi['niveau_nom']) : '' ?>
+        <?= $emploi['classe_nom'] ? ' · <i class="fas fa-chalkboard" style="font-size:.75rem"></i> '.h($emploi['classe_nom']) : '' ?>
         — Semaine du <?= formatDate($emploi['semaine_debut']) ?>
       </span>
     </div>
@@ -270,6 +274,9 @@ include APP_ROOT . '/includes/header.php';
         <div class="text-muted fs-sm">Filière</div>
         <div class="fw-bold"><?= h($emploi['filiere_code'].' – '.$emploi['filiere_nom']) ?></div>
         <?php if ($emploi['niveau_nom']): ?><div class="text-muted fs-sm"><?= h($emploi['niveau_nom']) ?></div><?php endif; ?>
+        <?php if ($emploi['classe_nom']): ?>
+          <div class="text-muted fs-sm"><i class="fas fa-chalkboard me-1" style="font-size:.72rem"></i><?= h($emploi['classe_nom']) ?></div>
+        <?php endif; ?>
       </div>
     </div>
   </div>

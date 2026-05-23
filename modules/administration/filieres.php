@@ -9,6 +9,17 @@ $errors = [];
 // Inline migrations
 try { $db->exec("ALTER TABLE filieres ADD COLUMN tronc_commun TINYINT(1) NOT NULL DEFAULT 0"); } catch (PDOException $e) {}
 try { $db->exec("ALTER TABLE filieres ADD COLUMN tronc_commun_id INT NULL"); } catch (PDOException $e) {}
+try { $db->exec("CREATE TABLE IF NOT EXISTS classes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    filiere_id INT NOT NULL,
+    niveau_id INT NULL,
+    nom VARCHAR(100) NOT NULL,
+    capacite INT DEFAULT NULL,
+    actif TINYINT(1) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (filiere_id) REFERENCES filieres(id) ON DELETE CASCADE,
+    FOREIGN KEY (niveau_id) REFERENCES niveaux(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); } catch (PDOException $e) {}
 
 // Create LSIO/TC if absent
 $tcExists = (int)$db->query("SELECT COUNT(*) FROM filieres WHERE code='LSIO/TC'")->fetchColumn();
@@ -27,8 +38,15 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
     redirect('/modules/administration/filieres.php');
 }
 
-// Save
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && hasRole(['admin', 'directeur'])) {
+// Delete classe
+if (isset($_GET['action']) && $_GET['action'] === 'delete_classe' && isset($_GET['id']) && hasRole(['admin', 'directeur']) && verifyCsrfToken($_GET['csrf'] ?? '')) {
+    $db->prepare("DELETE FROM classes WHERE id=?")->execute([(int)$_GET['id']]);
+    setFlash('success', 'Classe supprimée.');
+    redirect('/modules/administration/filieres.php');
+}
+
+// Save filière
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['action']) && hasRole(['admin', 'directeur'])) {
     if (!verifyCsrfToken($_POST['csrf'] ?? '')) {
         $errors[] = 'Jeton invalide.';
     } else {
@@ -84,6 +102,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && hasRole(['admin', 'directeur'])) {
                 }
             }
             if (empty($errors)) redirect('/modules/administration/filieres.php');
+        }
+    }
+}
+
+// Save classe
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_classe' && hasRole(['admin', 'directeur'])) {
+    if (!verifyCsrfToken($_POST['csrf'] ?? '')) {
+        $errors[] = 'Jeton invalide.';
+    } else {
+        $clEditId    = (int)($_POST['classe_edit_id']   ?? 0);
+        $clFiliereId = (int)($_POST['classe_filiere_id'] ?? 0);
+        $clNiveauId  = (int)($_POST['classe_niveau_id'] ?? 0) ?: null;
+        $clNom       = sanitize($_POST['classe_nom']    ?? '');
+        $clCapacite  = (int)($_POST['classe_capacite']  ?? 0) ?: null;
+
+        if (empty($clNom))       $errors[] = 'Le nom de la classe est obligatoire.';
+        if (!$clFiliereId)       $errors[] = 'Filière invalide.';
+
+        if (empty($errors)) {
+            if ($clEditId) {
+                $db->prepare("UPDATE classes SET filiere_id=?, niveau_id=?, nom=?, capacite=? WHERE id=?")
+                   ->execute([$clFiliereId, $clNiveauId, $clNom, $clCapacite, $clEditId]);
+                setFlash('success', 'Classe modifiée.');
+            } else {
+                $db->prepare("INSERT INTO classes (filiere_id, niveau_id, nom, capacite) VALUES (?,?,?,?)")
+                   ->execute([$clFiliereId, $clNiveauId, $clNom, $clCapacite]);
+                setFlash('success', "Classe « {$clNom} » créée.");
+            }
+            redirect('/modules/administration/filieres.php');
         }
     }
 }
@@ -205,6 +252,79 @@ include APP_ROOT . '/includes/header.php';
             </span>
           <?php endforeach; ?>
         </div>
+
+        <!-- Classes de la filière -->
+        <?php
+          $cStmt = $db->prepare("
+              SELECT c.id, c.nom, c.capacite, c.filiere_id, c.niveau_id,
+                     n.nom as niveau_nom, n.ordre as niveau_ordre
+              FROM classes c
+              LEFT JOIN niveaux n ON n.id = c.niveau_id
+              WHERE c.filiere_id = ? AND c.actif = 1
+              ORDER BY COALESCE(n.ordre, 9999), c.nom
+          ");
+          $cStmt->execute([$f['id']]);
+          $classes = $cStmt->fetchAll();
+          $classesByNiv = [];
+          foreach ($classes as $c) {
+              $nKey = (int)($c['niveau_id'] ?? 0);
+              if (!isset($classesByNiv[$nKey])) {
+                  $classesByNiv[$nKey] = ['label' => $c['niveau_nom'] ?? '', 'items' => []];
+              }
+              $classesByNiv[$nKey]['items'][] = $c;
+          }
+          $niveauxJson = h(json_encode(array_values($niveaux)));
+        ?>
+        <div class="mt-3 pt-3 border-top">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <small class="text-muted fw-semibold text-uppercase" style="letter-spacing:.05em;font-size:.72rem">
+              <i class="fas fa-chalkboard me-1"></i>Classes
+              <span class="badge rounded-pill bg-secondary ms-1" style="font-size:.7rem"><?= count($classes) ?></span>
+            </small>
+            <button type="button" class="btn btn-sm py-0 px-2 btn-outline-primary" style="font-size:.75rem"
+                    data-filiere-id="<?= $f['id'] ?>"
+                    data-niveaux="<?= $niveauxJson ?>"
+                    onclick="openClasseModal(this)">
+              <i class="fas fa-plus me-1"></i>Nouvelle classe
+            </button>
+          </div>
+          <?php if (empty($classes)): ?>
+            <p class="text-muted mb-0" style="font-size:.82rem">Aucune classe — cliquez sur "+ Nouvelle classe" pour en créer.</p>
+          <?php else: ?>
+            <?php foreach ($classesByNiv as $nKey => $group): ?>
+              <?php if ($group['label']): ?>
+                <div class="text-muted mb-1" style="font-size:.77rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em"><?= h($group['label']) ?></div>
+              <?php endif; ?>
+              <div class="d-flex flex-wrap gap-1 mb-2">
+                <?php foreach ($group['items'] as $c): ?>
+                  <span class="badge d-inline-flex align-items-center gap-1"
+                        style="background:#e8f0fe;color:#1558d6;border:1px solid #c5d8ff;font-size:.8rem;padding:.32em .65em;font-weight:500;border-radius:6px">
+                    <i class="fas fa-chalkboard" style="font-size:.65rem"></i>
+                    <?= h($c['nom']) ?>
+                    <?php if ($c['capacite']): ?>
+                      <span style="opacity:.6;font-size:.72rem;font-weight:400">/<?= (int)$c['capacite'] ?></span>
+                    <?php endif; ?>
+                    <button type="button" class="p-0 ms-1" style="line-height:1;border:none;background:none;color:#1558d6;cursor:pointer"
+                            data-id="<?= $c['id'] ?>"
+                            data-nom="<?= h($c['nom']) ?>"
+                            data-capacite="<?= (int)$c['capacite'] ?>"
+                            data-niveau-id="<?= (int)$c['niveau_id'] ?>"
+                            data-filiere-id="<?= $f['id'] ?>"
+                            data-niveaux="<?= $niveauxJson ?>"
+                            onclick="editClasseFromBtn(this)" title="Modifier">
+                      <i class="fas fa-edit" style="font-size:.65rem"></i>
+                    </button>
+                    <a href="?action=delete_classe&id=<?= $c['id'] ?>&csrf=<?= h(generateCsrfToken()) ?>"
+                       onclick="return confirm('Supprimer la classe « <?= addslashes(h($c['nom'])) ?> » ?')"
+                       style="color:#c62828;text-decoration:none;margin-left:1px" title="Supprimer">
+                      <i class="fas fa-times" style="font-size:.65rem"></i>
+                    </a>
+                  </span>
+                <?php endforeach; ?>
+              </div>
+            <?php endforeach; ?>
+          <?php endif; ?>
+        </div>
       </div>
     </div>
   </div>
@@ -277,6 +397,50 @@ include APP_ROOT . '/includes/header.php';
   </div>
 </div>
 
+<!-- Modal Classe -->
+<div class="modal fade" id="classeModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="classeModalTitle">Nouvelle classe</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST">
+        <input type="hidden" name="csrf" value="<?= h(generateCsrfToken()) ?>">
+        <input type="hidden" name="action" value="save_classe">
+        <input type="hidden" name="classe_edit_id" id="cl_edit_id" value="">
+        <input type="hidden" name="classe_filiere_id" id="cl_filiere_id" value="">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label">Niveau <small class="text-muted">(optionnel)</small></label>
+              <select name="classe_niveau_id" id="cl_niveau_id" class="form-select">
+                <option value="">— Non spécifié —</option>
+              </select>
+              <div class="form-text">Associer la classe à une année/niveau de la filière.</div>
+            </div>
+            <div class="col-md-8">
+              <label class="form-label">Nom de la classe *</label>
+              <input type="text" name="classe_nom" id="cl_nom" class="form-control"
+                     placeholder="Ex : Section A, Groupe 1, Classe B" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Capacité</label>
+              <input type="number" name="classe_capacite" id="cl_capacite" class="form-control"
+                     placeholder="30" min="1" max="999">
+              <div class="form-text">Nb max étudiants</div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Annuler</button>
+          <button type="submit" class="btn btn-primary"><i class="fas fa-save me-2"></i>Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <script>
 function updateDureeLabel() {
   const tcId   = document.getElementById('fil_tronc_commun_id').value;
@@ -328,6 +492,37 @@ function editFiliere(btn) {
   updateDureeLabel();
   new bootstrap.Modal(document.getElementById('filiereModal')).show();
 }
+function _populateNiveaux(sel, niveaux, selectedId) {
+  sel.innerHTML = '<option value="">— Non spécifié —</option>';
+  niveaux.forEach(n => {
+    const opt = document.createElement('option');
+    opt.value = n.id;
+    opt.textContent = n.nom;
+    if (parseInt(n.id) === parseInt(selectedId)) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+function openClasseModal(btn) {
+  document.getElementById('classeModalTitle').textContent = 'Nouvelle classe';
+  document.getElementById('cl_edit_id').value = '';
+  document.getElementById('cl_filiere_id').value = btn.getAttribute('data-filiere-id');
+  document.getElementById('cl_nom').value = '';
+  document.getElementById('cl_capacite').value = '';
+  const niveaux = JSON.parse(btn.getAttribute('data-niveaux') || '[]');
+  _populateNiveaux(document.getElementById('cl_niveau_id'), niveaux, 0);
+  new bootstrap.Modal(document.getElementById('classeModal')).show();
+}
+function editClasseFromBtn(btn) {
+  document.getElementById('classeModalTitle').textContent = 'Modifier la classe';
+  document.getElementById('cl_edit_id').value = btn.getAttribute('data-id');
+  document.getElementById('cl_filiere_id').value = btn.getAttribute('data-filiere-id');
+  document.getElementById('cl_nom').value = btn.getAttribute('data-nom');
+  document.getElementById('cl_capacite').value = btn.getAttribute('data-capacite') || '';
+  const niveaux = JSON.parse(btn.getAttribute('data-niveaux') || '[]');
+  _populateNiveaux(document.getElementById('cl_niveau_id'), niveaux, btn.getAttribute('data-niveau-id'));
+  new bootstrap.Modal(document.getElementById('classeModal')).show();
+}
+
 // Recalculate hint when duration changes
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('fil_duree').addEventListener('change', updateDureeLabel);
