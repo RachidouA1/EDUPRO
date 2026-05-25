@@ -108,6 +108,51 @@ if ($hasData) {
     }
     $notes = $notesStmt->fetchAll();
 
+    // ── Session 2 : fusionner avec les notes S1 pour les matières non repassées ─
+    // Dès qu'il y a au moins une note S2, on complète avec les notes S1 manquantes
+    if ($sessionNum === 2 && !empty($notes)) {
+        if ($isSansSemestre) {
+            $s1FbStmt = $db->prepare("
+                SELECT n.*, m.nom as matiere_nom, m.code as matiere_code, m.coefficient,
+                       COALESCE(m.seuil_reussite, 10) as seuil_reussite,
+                       m.ue_id, NULL as ue_nom, NULL as ue_code
+                FROM notes n JOIN matieres m ON m.id = n.matiere_id
+                WHERE n.etudiant_id=? AND n.annee_id=? AND n.session=1 ORDER BY m.nom
+            ");
+            $s1FbStmt->execute([$etudiantId, $anneeId]);
+        } elseif ($isNivSup) {
+            $s1FbStmt = $db->prepare("
+                SELECT n.*, m.nom as matiere_nom, m.code as matiere_code, m.coefficient,
+                       COALESCE(m.seuil_reussite, 10) as seuil_reussite,
+                       m.ue_id, u.nom as ue_nom, u.code_ue as ue_code,
+                       COALESCE(u.coefficient, 1) as ue_coefficient
+                FROM notes n JOIN matieres m ON m.id = n.matiere_id
+                LEFT JOIN ue u ON u.id = m.ue_id
+                WHERE n.etudiant_id=? AND n.annee_id=? AND n.session=1
+                  AND m.semestre_num=? ORDER BY u.code_ue, m.nom
+            ");
+            $s1FbStmt->execute([$etudiantId, $anneeId, $semestreNum]);
+        } else {
+            $s1FbStmt = $db->prepare("
+                SELECT n.*, m.nom as matiere_nom, m.code as matiere_code, m.coefficient,
+                       COALESCE(m.seuil_reussite, 10) as seuil_reussite,
+                       m.ue_id, NULL as ue_nom, NULL as ue_code
+                FROM notes n JOIN matieres m ON m.id = n.matiere_id
+                WHERE n.etudiant_id=? AND n.annee_id=? AND n.semestre_id=? AND n.session=1
+                ORDER BY m.nom
+            ");
+            $s1FbStmt->execute([$etudiantId, $anneeId, $semestreId]);
+        }
+        $s1FbRows = $s1FbStmt->fetchAll();
+        $mergedByMat = [];
+        foreach ($s1FbRows as $n) { $n['session_source'] = 1; $mergedByMat[(int)$n['matiere_id']] = $n; }
+        foreach ($notes      as $n) { $n['session_source'] = 2; $mergedByMat[(int)$n['matiere_id']] = $n; }
+        $notes = array_values($mergedByMat);
+    } else {
+        foreach ($notes as &$n) $n['session_source'] = $sessionNum;
+        unset($n);
+    }
+
     // ── UE compensation (niveau supérieur only) ───────────────────────────────
     if ($isNivSup && !empty($notes)) {
         $tmpUeGroups = [];
@@ -170,6 +215,72 @@ if ($hasData) {
             else               $n['niv_sup_statut'] = 'a_repasser';
         }
         unset($n);
+    }
+
+    // ── Session 2 : vérifier si l'étudiant a déjà validé en session 1 ──
+    $validatedS1 = false;
+    if ($sessionNum === 2) {
+        if ($isNivSup && $semestreNum) {
+            $s1NStmt = $db->prepare("
+                SELECT n.note_finale, m.coefficient, m.ue_id
+                FROM notes n JOIN matieres m ON m.id = n.matiere_id
+                WHERE n.etudiant_id=? AND n.annee_id=? AND n.session=1
+                  AND m.semestre_num=? AND m.ue_id IS NOT NULL
+            ");
+            $s1NStmt->execute([$etudiantId, $anneeId, $semestreNum]);
+            $s1NRows = $s1NStmt->fetchAll();
+            $s1ByUe  = [];
+            foreach ($s1NRows as $r) {
+                $uid = (int)$r['ue_id'];
+                $s1ByUe[$uid]['pts']  = ($s1ByUe[$uid]['pts']  ?? 0) + (float)$r['note_finale'] * (float)$r['coefficient'];
+                $s1ByUe[$uid]['coef'] = ($s1ByUe[$uid]['coef'] ?? 0) + (float)$r['coefficient'];
+            }
+            $ueIdStmt = $db->prepare("SELECT id FROM ue WHERE filiere_id=? AND semestre_num=? AND actif=1");
+            $ueIdStmt->execute([$etudiant['filiere_id'], $semestreNum]);
+            $s1UeIds = $ueIdStmt->fetchAll(PDO::FETCH_COLUMN);
+            if (!empty($s1UeIds)) {
+                $allOk = true;
+                foreach ($s1UeIds as $uid) {
+                    $moy = isset($s1ByUe[$uid]) && $s1ByUe[$uid]['coef'] > 0
+                        ? $s1ByUe[$uid]['pts'] / $s1ByUe[$uid]['coef'] : 0;
+                    if ($moy < 10) { $allOk = false; break; }
+                }
+                $validatedS1 = $allOk;
+            }
+        } elseif ($isSansSemestre) {
+            // VP >= 10, ASB >= 12
+            $defaultSeuilSS = ($etudiant['filiere_code'] === 'ASB') ? 12 : 10;
+            $s1NStmt = $db->prepare("
+                SELECT n.note_finale, m.seuil_reussite
+                FROM notes n JOIN matieres m ON m.id = n.matiere_id
+                WHERE n.etudiant_id=? AND n.annee_id=? AND n.session=1
+            ");
+            $s1NStmt->execute([$etudiantId, $anneeId]);
+            $s1NRows = $s1NStmt->fetchAll();
+            if (!empty($s1NRows)) {
+                $allOk = true;
+                foreach ($s1NRows as $r) {
+                    $seuil = $r['seuil_reussite'] !== null ? (float)$r['seuil_reussite'] : $defaultSeuilSS;
+                    if ($r['note_finale'] === null || (float)$r['note_finale'] < $seuil) { $allOk = false; break; }
+                }
+                $validatedS1 = $allOk;
+            }
+        } else {
+            $s1NStmt = $db->prepare("
+                SELECT n.note_finale, COALESCE(m.seuil_reussite, 10) as seuil
+                FROM notes n JOIN matieres m ON m.id = n.matiere_id
+                WHERE n.etudiant_id=? AND n.annee_id=? AND n.semestre_id=? AND n.session=1
+            ");
+            $s1NStmt->execute([$etudiantId, $anneeId, $semestreId]);
+            $s1NRows = $s1NStmt->fetchAll();
+            if (!empty($s1NRows)) {
+                $allOk = true;
+                foreach ($s1NRows as $r) {
+                    if ($r['note_finale'] === null || (float)$r['note_finale'] < (float)$r['seuil']) { $allOk = false; break; }
+                }
+                $validatedS1 = $allOk;
+            }
+        }
     }
 
     // Calculate ranking
@@ -263,94 +374,104 @@ if (isset($_GET['export_excel']) && $etudiant && !empty($notes)) {
     echo '<html><head><meta charset="UTF-8"></head><body>';
     echo '<table border="1" cellpadding="5" cellspacing="0" style="border-collapse:collapse;width:100%">';
 
-    echo '<tr><td colspan="7" style="text-align:center;font-size:16px;font-weight:bold;background:#0f2d5c;color:white">';
+    echo '<tr><td colspan="6" style="text-align:center;font-size:16px;font-weight:bold;background:#0f2d5c;color:white">';
     echo 'ÉCOLE PRIVÉE DE SANTÉ IBN ROCHD<br>BULLETIN DE NOTES<br>';
     echo htmlspecialchars($xlAnneeLabel);
     if ($xlSemestreLabel) echo ' – ' . htmlspecialchars($xlSemestreLabel);
     echo '<br>' . ($sessionNum == 1 ? '1ÈRE SESSION' : '2ÈME SESSION (RATTRAPAGE)');
     echo '</td></tr>';
 
-    echo '<tr style="background:#1a5276;color:white"><td colspan="7" style="font-weight:bold">INFORMATIONS ÉTUDIANT</td></tr>';
+    echo '<tr style="background:#1a5276;color:white"><td colspan="6" style="font-weight:bold">INFORMATIONS ÉTUDIANT</td></tr>';
     echo '<tr><td><strong>Étudiant :</strong></td><td colspan="2">' . strtoupper($etudiant['nom']??'') . ' ' . ucfirst($etudiant['prenom']??'') . '</td>';
-    echo '<td><strong>Matricule :</strong></td><td colspan="3">' . ($etudiant['matricule']??'') . '</td></tr>';
+    echo '<td><strong>Matricule :</strong></td><td colspan="2">' . ($etudiant['matricule']??'') . '</td></tr>';
     echo '<tr><td><strong>Filière :</strong></td><td colspan="2">' . htmlspecialchars($etudiant['filiere_nom']??'') . '</td>';
-    echo '<td><strong>Niveau :</strong></td><td colspan="3">' . htmlspecialchars($etudiant['niveau_nom']??'') . '</td></tr>';
+    echo '<td><strong>Niveau :</strong></td><td colspan="2">' . htmlspecialchars($etudiant['niveau_nom']??'') . '</td></tr>';
 
     if ($isNivSup) {
-        echo '<tr style="background:#1a5276;color:white"><th>Code</th><th>Matière / UE</th><th>Coeff</th><th>CC /20</th><th>Examen /20</th><th>Note Finale /20</th><th>Statut</th></tr>';
+        echo '<tr style="background:#1a5276;color:white"><th>Code</th><th>Matière / UE</th><th>Coeff</th><th>Examen /20</th><th>Note Finale /20</th><th>Validation</th></tr>';
         foreach ($ueGroups as $ug) {
             $ueValBg = $ug['validee'] ? '#d4edda' : '#f8d7da';
-            echo '<tr style="background:#e8eaf6;font-weight:bold"><td colspan="7">UE ' . htmlspecialchars($ug['code']) . ' – ' . htmlspecialchars($ug['nom']) . '</td></tr>';
+            echo '<tr style="background:#e8eaf6;font-weight:bold"><td colspan="6">UE ' . htmlspecialchars($ug['code']) . ' – ' . htmlspecialchars($ug['nom']) . '</td></tr>';
             foreach ($ug['notes'] as $n) {
                 $bg = ($n['note_finale'] !== null && $n['note_finale'] < 10) ? '#fff8e1' : ($n['note_finale'] !== null ? '#f1f8e9' : '#fff');
                 echo '<tr style="background:' . $bg . '">';
                 echo '<td>' . htmlspecialchars($n['matiere_code']??'') . '</td>';
                 echo '<td>' . htmlspecialchars($n['matiere_nom']??'') . '</td>';
                 echo '<td style="text-align:center">' . ($n['coefficient']??'') . '</td>';
-                echo '<td style="text-align:center">' . ($n['note_cc']   !== null ? number_format($n['note_cc'],2)   : '–') . '</td>';
                 echo '<td style="text-align:center">' . ($n['note_exam'] !== null ? number_format($n['note_exam'],2) : '–') . '</td>';
                 echo '<td style="text-align:center;font-weight:bold">' . ($n['note_finale'] !== null ? number_format($n['note_finale'],2) : '–') . '</td>';
-                $statutLabel = match($n['niv_sup_statut'] ?? '') {
-                    'valide' => 'Validé', 'eliminatoire' => 'Éliminatoire – S2',
-                    'compense' => 'Compensé', 'a_repasser' => 'À repasser S2', default => '–',
+                $xlStatut = match($n['niv_sup_statut'] ?? '') {
+                    'valide', 'compense' => 'Validé',
+                    'eliminatoire', 'a_repasser' => 'Non validée',
+                    default => '–',
                 };
-                echo '<td style="text-align:center">' . $statutLabel . '</td>';
+                echo '<td style="text-align:center">' . $xlStatut . '</td>';
                 echo '</tr>';
             }
             $ueMoyStr = $ug['moyenne'] !== null ? number_format($ug['moyenne'],2).'/20' : '–';
             if ($ug['validee'])            $ueRes = 'UE VALIDÉE';
             elseif ($ug['has_elim'])       $ueRes = 'UE NON VALIDÉE – Note éliminatoire : ' . implode(', ', $ug['elim_matieres']);
             else                           $ueRes = 'UE NON VALIDÉE';
-            echo '<tr style="background:' . $ueValBg . ';font-weight:bold"><td colspan="5" style="text-align:right">Moy. UE ' . htmlspecialchars($ug['code']) . ' :</td><td style="text-align:center">' . $ueMoyStr . '</td><td style="text-align:center">' . $ueRes . '</td></tr>';
+            echo '<tr style="background:' . $ueValBg . ';font-weight:bold"><td colspan="4" style="text-align:right">Moy. UE ' . htmlspecialchars($ug['code']) . ' :</td><td style="text-align:center">' . $ueMoyStr . '</td><td style="text-align:center">' . $ueRes . '</td></tr>';
         }
         if (!empty($noUeNotes)) {
-            echo '<tr style="background:#f5f5f5;font-weight:bold"><td colspan="7">Matières hors UE</td></tr>';
+            echo '<tr style="background:#f5f5f5;font-weight:bold"><td colspan="6">Matières hors UE</td></tr>';
             foreach ($noUeNotes as $n) {
                 $bg = ($n['note_finale'] !== null && $n['note_finale'] < 10) ? '#fff8e1' : '#fff';
                 echo '<tr style="background:' . $bg . '">';
                 echo '<td>' . htmlspecialchars($n['matiere_code']??'') . '</td><td>' . htmlspecialchars($n['matiere_nom']??'') . '</td>';
                 echo '<td style="text-align:center">' . ($n['coefficient']??'') . '</td>';
-                echo '<td style="text-align:center">' . ($n['note_cc']   !== null ? number_format($n['note_cc'],2)   : '–') . '</td>';
                 echo '<td style="text-align:center">' . ($n['note_exam'] !== null ? number_format($n['note_exam'],2) : '–') . '</td>';
                 echo '<td style="text-align:center;font-weight:bold">' . ($n['note_finale'] !== null ? number_format($n['note_finale'],2) : '–') . '</td>';
-                echo '<td style="text-align:center">–</td></tr>';
+                $noUeVal = ($n['note_finale'] !== null && $n['note_finale'] >= 10);
+                echo '<td style="text-align:center">' . ($n['note_finale'] !== null ? ($noUeVal ? 'Validé' : 'Non validée') : '–') . '</td></tr>';
             }
         }
         // Résultat niveau supérieur: toutes UEs validées?
         $allUesOk  = !empty($ueGroups) && array_reduce($ueGroups, fn($c,$ug) => $c && $ug['validee'], true);
-        $xlNivSupResult = $allUesOk ? 'ADMIS(E)' : 'À REPASSER';
+        if ($allUesOk) {
+            $xlNivSupResult = $sessionNum === 2 ? 'ADMIS(E) – 2ème Session' : 'ADMIS(E)';
+        } else {
+            $xlNivSupResult = $sessionNum === 1 ? 'À REPASSER EN SESSION 2' : 'AJOURNÉ(E) – Redoublant';
+        }
         $res_bg = $allUesOk ? '#d4edda' : '#f8d7da';
-        echo '<tr style="font-weight:bold;background:#e3f2fd"><td colspan="5" style="text-align:right">Moyenne générale :</td>';
+        echo '<tr style="font-weight:bold;background:#e3f2fd"><td colspan="4" style="text-align:right">Moyenne générale :</td>';
         echo '<td style="text-align:center">' . ($xlMoyenne !== null ? number_format($xlMoyenne,2).'/20' : '–') . '</td>';
-        echo '<td style="text-align:center">' . getMention($xlMoyenne) . '</td></tr>';
+        echo '<td style="text-align:center"></td></tr>';
         if ($classement) {
-            echo '<tr><td colspan="5" style="text-align:right"><strong>Classement :</strong></td><td colspan="2"><strong>' . $classement['rang'] . ' / ' . $classement['total'] . '</strong></td></tr>';
-            echo '<tr style="background:' . $res_bg . '"><td colspan="5" style="text-align:right"><strong>Résultat :</strong></td><td colspan="2" style="font-weight:bold">' . $xlNivSupResult . '</td></tr>';
+            echo '<tr><td colspan="4" style="text-align:right"><strong>Classement :</strong></td><td colspan="2"><strong>' . $classement['rang'] . ' / ' . $classement['total'] . '</strong></td></tr>';
+            echo '<tr style="background:' . $res_bg . '"><td colspan="4" style="text-align:right"><strong>Résultat :</strong></td><td colspan="2" style="font-weight:bold">' . $xlNivSupResult . '</td></tr>';
         }
     } else {
-        echo '<tr style="background:#1a5276;color:white"><th>Code</th><th>Matière</th><th>Coeff</th><th>CC /20</th><th>Examen /20</th><th>Note Finale /20</th><th>Mention</th></tr>';
+        echo '<tr style="background:#1a5276;color:white"><th>Code</th><th>Matière</th><th>Coeff</th><th>Examen /20</th><th>Note Finale /20</th><th>Validation</th></tr>';
+        $defaultSeuilXl = ($etudiant['filiere_code'] === 'ASB') ? 12 : 10;
+        $xlAllNivMoyVal = true;
         foreach ($notes as $n) {
-            $bg = ($n['note_finale'] !== null && $n['note_finale'] < 10) ? '#f8d7da' : ($n['note_finale'] !== null ? '#d4edda' : '#fff');
+            $seuil_n = (float)($n['seuil_reussite'] ?? $defaultSeuilXl);
+            $nValXl  = ($n['note_finale'] !== null && (float)$n['note_finale'] >= $seuil_n);
+            if (!$nValXl) $xlAllNivMoyVal = false;
+            $bg      = ($n['note_finale'] !== null) ? ($nValXl ? '#d4edda' : '#f8d7da') : '#fff';
             echo '<tr style="background:' . $bg . '">';
             echo '<td>' . htmlspecialchars($n['matiere_code']??'') . '</td>';
             echo '<td>' . htmlspecialchars($n['matiere_nom']??'') . '</td>';
             echo '<td style="text-align:center">' . ($n['coefficient']??'') . '</td>';
-            echo '<td style="text-align:center">' . ($n['note_cc']   !== null ? number_format($n['note_cc'],2)   : '–') . '</td>';
             echo '<td style="text-align:center">' . ($n['note_exam'] !== null ? number_format($n['note_exam'],2) : '–') . '</td>';
             echo '<td style="text-align:center;font-weight:bold">' . ($n['note_finale'] !== null ? number_format($n['note_finale'],2) : '–') . '</td>';
-            echo '<td style="text-align:center">' . getMention($n['note_finale'] !== null ? (float)$n['note_finale'] : null) . '</td>';
+            echo '<td style="text-align:center">' . ($n['note_finale'] !== null ? ($nValXl ? 'Validé' : 'Non validée') : '–') . '</td>';
             echo '</tr>';
         }
-        echo '<tr style="font-weight:bold;background:#e3f2fd"><td colspan="5" style="text-align:right">Moyenne générale :</td>';
+        $defaultSeuilXlRes = ($etudiant['filiere_code'] === 'ASB') ? 12 : 10;
+        echo '<tr style="font-weight:bold;background:#e3f2fd"><td colspan="4" style="text-align:right">Moyenne générale :</td>';
         echo '<td style="text-align:center">' . ($xlMoyenne !== null ? number_format($xlMoyenne,2).'/20' : '–') . '</td>';
-        echo '<td style="text-align:center">' . getMention($xlMoyenne) . '</td></tr>';
+        echo '<td style="text-align:center"></td></tr>';
         if ($classement) {
-            echo '<tr><td colspan="5" style="text-align:right"><strong>Classement :</strong></td><td colspan="2"><strong>' . $classement['rang'] . ' / ' . $classement['total'] . '</strong></td></tr>';
-            $res_bg = $xlMoyenne >= 10 ? '#d4edda' : '#f8d7da';
-            echo '<tr style="background:' . $res_bg . '"><td colspan="5" style="text-align:right"><strong>Résultat :</strong></td><td colspan="2" style="font-weight:bold">' . ($xlMoyenne >= 10 ? 'ADMIS(E)' : 'AJOURNÉ(E)') . '</td></tr>';
+            $xlNivMoyResultLabel = $xlAllNivMoyVal ? ($sessionNum === 2 ? 'ADMIS(E) – 2ème Session' : 'ADMIS(E)') : ($sessionNum === 1 ? 'À REPASSER EN SESSION 2' : 'AJOURNÉ(E) – Redoublant');
+            $res_bg = $xlAllNivMoyVal ? '#d4edda' : '#f8d7da';
+            echo '<tr><td colspan="4" style="text-align:right"><strong>Classement :</strong></td><td colspan="2"><strong>' . $classement['rang'] . ' / ' . $classement['total'] . '</strong></td></tr>';
+            echo '<tr style="background:' . $res_bg . '"><td colspan="4" style="text-align:right"><strong>Résultat :</strong></td><td colspan="2" style="font-weight:bold">' . $xlNivMoyResultLabel . '</td></tr>';
         }
     }
-    echo '<tr style="background:#0f2d5c;color:white"><td colspan="7" style="text-align:center">Bulletin édité le ' . date('d/m/Y à H:i') . ' – Cachet et signature du Directeur</td></tr>';
+    echo '<tr style="background:#0f2d5c;color:white"><td colspan="6" style="text-align:center">Bulletin édité le ' . date('d/m/Y à H:i') . ' – Cachet et signature du Directeur</td></tr>';
     echo '</table></body></html>';
     exit();
 }
@@ -592,9 +713,24 @@ if (!$print) {
     foreach ($annees as $a) if ($a['id'] == $anneeId) $anneeLabel = $a['libelle'];
     // $semestreLabel already set above (handles both standard and niveau supérieur)
     $moyenne  = calculateMoyenne($notes);
+    if (!$isNivSup) {
+        $defaultSeuilView = ($etudiant['filiere_code'] === 'ASB') ? 12 : 10;
+        $allNotesValOk = true;
+        foreach ($notes as $_n) {
+            $s = (float)($_n['seuil_reussite'] ?? $defaultSeuilView);
+            if ($_n['note_finale'] === null || (float)$_n['note_finale'] < $s) { $allNotesValOk = false; break; }
+        }
+    }
     $allUesOk = $isNivSup
         ? (!empty($ueGroups) && array_reduce($ueGroups, fn($c,$ug) => $c && $ug['validee'], true))
-        : ($moyenne !== null && $moyenne >= 10);
+        : $allNotesValOk;
+    if ($allUesOk) {
+        $resultLabel = $sessionNum === 2 ? 'ADMIS(E) – 2ème Session' : 'ADMIS(E)';
+    } elseif ($isNivSup) {
+        $resultLabel = $sessionNum === 1 ? 'À REPASSER EN SESSION 2' : 'AJOURNÉ(E) – Redoublant';
+    } else {
+        $resultLabel = $sessionNum === 1 ? 'À REPASSER EN SESSION 2' : 'AJOURNÉ(E) – Redoublant';
+    }
   ?>
 
 <?php if (!$print): ?>
@@ -639,6 +775,13 @@ if (!$print) {
     </div>
   </div>
 
+  <?php if ($sessionNum === 2 && ($validatedS1 ?? false)): ?>
+  <div style="background:#d4edda;border:1px solid #c3e6cb;border-radius:8px;padding:10px 16px;margin-bottom:14px;color:#155724;font-size:12px">
+    <strong>&#10003; Étudiant validé en Session 1.</strong>
+    Toutes les matières/UE ont été validées en session 1 – aucune reprise en session 2 nécessaire.
+  </div>
+  <?php endif; ?>
+
   <div class="info-grid">
     <div class="info-card">
       <div class="lbl">Étudiant</div>
@@ -667,17 +810,16 @@ if (!$print) {
           <th>Code</th>
           <th>Matière / Module</th>
           <th>Coef.</th>
-          <th>CC /20</th>
           <th>Examen /20</th>
           <th>Note /20</th>
-          <th><?= $isNivSup ? 'Statut' : 'Mention' ?></th>
+          <th>Validation</th>
         </tr>
       </thead>
       <tbody>
         <?php if ($isNivSup): ?>
           <?php foreach ($ueGroups as $ug): ?>
             <tr style="background:#e8eaf6">
-              <td colspan="7" style="font-weight:700;font-size:11px;padding:5px 10px;color:#1a237e">
+              <td colspan="6" style="font-weight:700;font-size:11px;padding:5px 10px;color:#1a237e">
                 UE <?= h($ug['code']) ?> — <?= h($ug['nom']) ?>
               </td>
             </tr>
@@ -687,16 +829,21 @@ if (!$print) {
               <td style="font-family:monospace;font-size:11px"><?= h($n['matiere_code']) ?></td>
               <td><?= h($n['matiere_nom']) ?></td>
               <td><?= $n['coefficient'] ?></td>
-              <td><?= $n['note_cc']   !== null ? number_format($n['note_cc'],2)   : '–' ?></td>
               <td><?= $n['note_exam'] !== null ? number_format($n['note_exam'],2) : '–' ?></td>
               <td class="<?= ($n['note_finale'] !== null && $n['note_finale'] >= 10) ? 'cv' : 'cnv' ?>">
                 <?= $n['note_finale'] !== null ? number_format($n['note_finale'],2) : '–' ?>
               </td>
-              <td style="font-size:10px"><?= nivSupStatutBadge($statut) ?></td>
+              <td style="font-size:10px"><?php
+                echo match($statut) {
+                    'valide', 'compense' => '<span style="background:#d4edda;color:#155724;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600">Validé</span>',
+                    'eliminatoire', 'a_repasser' => '<span style="background:#f8d7da;color:#721c24;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600">Non validée</span>',
+                    default => '<span style="color:#999">–</span>',
+                };
+              ?></td>
             </tr>
             <?php endforeach; ?>
             <tr style="background:<?= $ug['validee'] ? '#e8f5e9' : '#fce4ec' ?>;font-weight:600;font-size:11px">
-              <td colspan="5" style="text-align:right;padding-right:10px">Moy. UE <?= h($ug['code']) ?> :</td>
+              <td colspan="4" style="text-align:right;padding-right:10px">Moy. UE <?= h($ug['code']) ?> :</td>
               <td class="<?= ($ug['moyenne'] ?? 0) >= 10 ? 'cv' : 'cnv' ?>">
                 <?= $ug['moyenne'] !== null ? number_format($ug['moyenne'],2).'/20' : '–' ?>
               </td>
@@ -715,18 +862,24 @@ if (!$print) {
             </tr>
           <?php endforeach; ?>
           <?php if (!empty($noUeNotes)): ?>
-            <tr style="background:#f5f5f5"><td colspan="7" style="font-weight:700;font-size:11px;padding:5px 10px">Matières hors UE</td></tr>
+            <tr style="background:#f5f5f5"><td colspan="6" style="font-weight:700;font-size:11px;padding:5px 10px">Matières hors UE</td></tr>
             <?php foreach ($noUeNotes as $n): ?>
+            <?php $stNoUe = $n['niv_sup_statut'] ?? ''; ?>
             <tr <?= ($n['note_finale'] !== null && $n['note_finale'] < 10) ? 'class="row-fail"' : '' ?>>
               <td style="font-family:monospace;font-size:11px"><?= h($n['matiere_code']) ?></td>
               <td><?= h($n['matiere_nom']) ?></td>
               <td><?= $n['coefficient'] ?></td>
-              <td><?= $n['note_cc']   !== null ? number_format($n['note_cc'],2)   : '–' ?></td>
               <td><?= $n['note_exam'] !== null ? number_format($n['note_exam'],2) : '–' ?></td>
               <td class="<?= ($n['note_finale'] !== null && $n['note_finale'] >= 10) ? 'cv' : 'cnv' ?>">
                 <?= $n['note_finale'] !== null ? number_format($n['note_finale'],2) : '–' ?>
               </td>
-              <td style="font-size:10px"><?= nivSupStatutBadge($n['niv_sup_statut'] ?? '') ?></td>
+              <td style="font-size:10px"><?php
+                echo match($stNoUe) {
+                    'valide', 'compense' => '<span style="background:#d4edda;color:#155724;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600">Validé</span>',
+                    'eliminatoire', 'a_repasser' => '<span style="background:#f8d7da;color:#721c24;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600">Non validée</span>',
+                    default => '<span style="color:#999">–</span>',
+                };
+              ?></td>
             </tr>
             <?php endforeach; ?>
           <?php endif; ?>
@@ -736,23 +889,28 @@ if (!$print) {
             <td style="font-family:monospace;font-size:11px"><?= h($n['matiere_code']) ?></td>
             <td><?= h($n['matiere_nom']) ?></td>
             <td><?= $n['coefficient'] ?></td>
-            <td><?= $n['note_cc']   !== null ? number_format($n['note_cc'],2)   : '–' ?></td>
             <td><?= $n['note_exam'] !== null ? number_format($n['note_exam'],2) : '–' ?></td>
-            <td class="<?= ($n['note_finale'] !== null && $n['note_finale'] >= 10) ? 'cv' : 'cnv' ?>">
+            <td class="<?= ($n['note_finale'] !== null && $n['note_finale'] >= (float)($n['seuil_reussite'] ?? 10)) ? 'cv' : 'cnv' ?>">
               <?= $n['note_finale'] !== null ? number_format($n['note_finale'],2) : '–' ?>
             </td>
-            <td><?= getMention($n['note_finale'] !== null ? (float)$n['note_finale'] : null) ?></td>
+            <td style="font-size:10px"><?php
+              $nVal = ($n['note_finale'] !== null && (float)$n['note_finale'] >= (float)($n['seuil_reussite'] ?? 10));
+              echo $n['note_finale'] !== null
+                  ? ($nVal ? '<span style="background:#d4edda;color:#155724;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600">Validé</span>'
+                           : '<span style="background:#f8d7da;color:#721c24;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600">Non validée</span>')
+                  : '<span style="color:#999">–</span>';
+            ?></td>
           </tr>
           <?php endforeach; ?>
         <?php endif; ?>
       </tbody>
       <tfoot>
         <tr>
-          <td colspan="5" style="text-align:right;padding-right:14px"><strong>Moyenne générale :</strong></td>
+          <td colspan="4" style="text-align:right;padding-right:14px"><strong>Moyenne générale :</strong></td>
           <td class="<?= $moyenne >= 10 ? 'cv' : 'cnv' ?>" style="font-size:15px">
             <strong><?= $moyenne !== null ? number_format($moyenne,2).'/20' : '–' ?></strong>
           </td>
-          <td><?= $isNivSup ? '' : getMention($moyenne) ?></td>
+          <td></td>
         </tr>
       </tfoot>
     </table>
@@ -779,14 +937,13 @@ if (!$print) {
     <div class="result-card">
       <div style="font-size:13px;color:#555">Décision :</div>
       <div class="result-badge <?= $allUesOk ? 'badge-ok' : 'badge-ko' ?>">
-        <?= $allUesOk ? 'ADMIS(E)' : ($isNivSup ? 'À REPASSER' : 'AJOURNÉ(E)') ?>
+        <?= $resultLabel ?>
       </div>
     </div>
   </div>
   <?php endif; ?>
 
-  <div class="sig-block">
-    <div class="sig-item"><div class="sig-line"></div>Signature de l'enseignant</div>
+  <div class="sig-block" style="grid-template-columns:repeat(2,1fr)">
     <div class="sig-item"><div class="sig-line"></div>Responsable pédagogique</div>
     <div class="sig-item"><div class="sig-line"></div>Cachet et signature du Directeur</div>
   </div>
@@ -832,6 +989,13 @@ if (!$print) {
       </div>
     </div>
 
+    <?php if ($sessionNum === 2 && ($validatedS1 ?? false)): ?>
+    <div class="alert alert-success py-2 mb-3" style="font-size:.88rem">
+      <strong><i class="fas fa-check-circle me-1"></i>Étudiant validé en Session 1.</strong>
+      Toutes les matières/UE ont été validées en session 1 – aucune reprise en session 2 n'est nécessaire.
+    </div>
+    <?php endif; ?>
+
     <!-- Student Info -->
     <div class="row mb-4">
       <div class="col-md-6">
@@ -866,16 +1030,16 @@ if (!$print) {
       <thead style="background:#0f2d5c;color:#fff">
         <tr>
           <th>Code</th><th>Matière / Module</th><th class="text-center">Coef.</th>
-          <th class="text-center">CC /20</th><th class="text-center">Examen /20</th>
+          <th class="text-center">Examen /20</th>
           <th class="text-center">Note /20</th>
-          <th class="text-center"><?= $isNivSup ? 'Statut' : 'Mention' ?></th>
+          <th class="text-center">Validation</th>
         </tr>
       </thead>
       <tbody>
         <?php if ($isNivSup): ?>
           <?php foreach ($ueGroups as $ug): ?>
             <tr style="background:#e8eaf6">
-              <td colspan="7" class="fw-bold" style="font-size:.8rem;color:#1a237e;padding:6px 10px">
+              <td colspan="6" class="fw-bold" style="font-size:.8rem;color:#1a237e;padding:6px 10px">
                 <i class="fas fa-layer-group me-1"></i>UE <?= h($ug['code']) ?> — <?= h($ug['nom']) ?>
               </td>
             </tr>
@@ -886,24 +1050,21 @@ if (!$print) {
               <td><code style="font-size:.8rem"><?= h($n['matiere_code']) ?></code></td>
               <td><?= h($n['matiere_nom']) ?></td>
               <td class="text-center"><?= $n['coefficient'] ?></td>
-              <td class="text-center"><?= $n['note_cc']   !== null ? number_format($n['note_cc'],2)   : '–' ?></td>
               <td class="text-center"><?= $n['note_exam'] !== null ? number_format($n['note_exam'],2) : '–' ?></td>
               <td class="text-center fw-bold <?= ($n['note_finale'] !== null && $n['note_finale'] >= 10) ? 'text-success' : 'text-danger' ?>">
                 <?= $n['note_finale'] !== null ? number_format($n['note_finale'],2) : '–' ?>
               </td>
               <td class="text-center"><?php
                 echo match($statut) {
-                    'valide'       => '<span class="badge bg-success">Validé</span>',
-                    'eliminatoire' => '<span class="badge bg-danger">Éliminatoire – S2</span>',
-                    'compense'     => '<span class="badge bg-warning text-dark">Compensé</span>',
-                    'a_repasser'   => '<span class="badge bg-danger">À repasser S2</span>',
-                    default        => '<span class="text-muted">–</span>',
+                    'valide', 'compense' => '<span class="badge bg-success">Validé</span>',
+                    'eliminatoire', 'a_repasser' => '<span class="badge bg-danger">Non validée</span>',
+                    default => '<span class="text-muted">–</span>',
                 };
               ?></td>
             </tr>
             <?php endforeach; ?>
             <tr style="background:<?= $ug['validee'] ? '#e8f5e9' : '#fce4ec' ?>;font-weight:600">
-              <td colspan="5" class="text-end pe-3" style="font-size:.82rem">Moy. UE <?= h($ug['code']) ?> :</td>
+              <td colspan="4" class="text-end pe-3" style="font-size:.82rem">Moy. UE <?= h($ug['code']) ?> :</td>
               <td class="text-center <?= ($ug['moyenne'] ?? 0) >= 10 ? 'text-success' : 'text-danger' ?>">
                 <?= $ug['moyenne'] !== null ? number_format($ug['moyenne'],2).'/20' : '–' ?>
               </td>
@@ -922,37 +1083,45 @@ if (!$print) {
           <?php endforeach; ?>
           <?php if (!empty($noUeNotes)): ?>
             <tr style="background:#f5f5f5">
-              <td colspan="7" class="fw-bold" style="font-size:.8rem;padding:6px 10px">Matières hors UE</td>
+              <td colspan="6" class="fw-bold" style="font-size:.8rem;padding:6px 10px">Matières hors UE</td>
             </tr>
             <?php foreach ($noUeNotes as $n): ?>
+            <?php $stNU = $n['niv_sup_statut'] ?? ''; ?>
             <tr <?= ($n['note_finale'] !== null && $n['note_finale'] < 10) ? 'style="background:#fff8e1"' : '' ?>>
               <td><code style="font-size:.8rem"><?= h($n['matiere_code']) ?></code></td>
               <td><?= h($n['matiere_nom']) ?></td>
               <td class="text-center"><?= $n['coefficient'] ?></td>
-              <td class="text-center"><?= $n['note_cc']   !== null ? number_format($n['note_cc'],2)   : '–' ?></td>
               <td class="text-center"><?= $n['note_exam'] !== null ? number_format($n['note_exam'],2) : '–' ?></td>
               <td class="text-center fw-bold <?= ($n['note_finale'] !== null && $n['note_finale'] >= 10) ? 'text-success' : 'text-danger' ?>">
                 <?= $n['note_finale'] !== null ? number_format($n['note_finale'],2) : '–' ?>
               </td>
               <td class="text-center"><?php
-                $st = $n['niv_sup_statut'] ?? '';
-                echo match($st) { 'valide'=>'<span class="badge bg-success">Validé</span>', 'eliminatoire'=>'<span class="badge bg-danger">Éliminatoire – S2</span>', 'compense'=>'<span class="badge bg-warning text-dark">Compensé</span>', 'a_repasser'=>'<span class="badge bg-danger">À repasser S2</span>', default=>'–' };
+                echo match($stNU) {
+                    'valide', 'compense' => '<span class="badge bg-success">Validé</span>',
+                    'eliminatoire', 'a_repasser' => '<span class="badge bg-danger">Non validée</span>',
+                    default => '<span class="text-muted">–</span>',
+                };
               ?></td>
             </tr>
             <?php endforeach; ?>
           <?php endif; ?>
         <?php else: ?>
           <?php foreach ($notes as $n): ?>
-          <tr <?= ($n['note_finale'] !== null && $n['note_finale'] < 10) ? 'style="background:#fff3f3"' : '' ?>>
+          <?php $seuil_n = (float)($n['seuil_reussite'] ?? 10); $bVal = ($n['note_finale'] !== null && (float)$n['note_finale'] >= $seuil_n); ?>
+          <tr <?= ($n['note_finale'] !== null && (float)$n['note_finale'] < $seuil_n) ? 'style="background:#fff3f3"' : '' ?>>
             <td><code style="font-size:.8rem"><?= h($n['matiere_code']) ?></code></td>
             <td><?= h($n['matiere_nom']) ?></td>
             <td class="text-center"><?= $n['coefficient'] ?></td>
-            <td class="text-center"><?= $n['note_cc']   !== null ? number_format($n['note_cc'],2)   : '–' ?></td>
             <td class="text-center"><?= $n['note_exam'] !== null ? number_format($n['note_exam'],2) : '–' ?></td>
-            <td class="text-center fw-bold <?= ($n['note_finale'] !== null && $n['note_finale'] >= 10) ? 'text-success' : 'text-danger' ?>">
+            <td class="text-center fw-bold <?= $bVal ? 'text-success' : 'text-danger' ?>">
               <?= $n['note_finale'] !== null ? number_format($n['note_finale'],2) : '–' ?>
             </td>
-            <td class="text-center"><?= getMention($n['note_finale'] !== null ? (float)$n['note_finale'] : null) ?></td>
+            <td class="text-center"><?php
+              echo $n['note_finale'] !== null
+                  ? ($bVal ? '<span class="badge bg-success">Validé</span>'
+                           : '<span class="badge bg-danger">Non validée</span>')
+                  : '<span class="text-muted">–</span>';
+            ?></td>
           </tr>
           <?php endforeach; ?>
         <?php endif; ?>
@@ -960,11 +1129,11 @@ if (!$print) {
       <tfoot>
         <tr style="background:#f8f9fa;font-weight:700">
           <td colspan="2" class="text-end">Moyenne générale :</td>
-          <td colspan="3"></td>
+          <td colspan="2"></td>
           <td class="text-center fs-5 <?= $moyenne >= 10 ? 'text-success' : 'text-danger' ?>">
             <?= $moyenne !== null ? number_format($moyenne,2) . '/20' : '–' ?>
           </td>
-          <td class="text-center"><?= $isNivSup ? '' : getMention($moyenne) ?></td>
+          <td></td>
         </tr>
       </tfoot>
     </table>
@@ -996,7 +1165,7 @@ if (!$print) {
         <div class="p-3 rounded d-flex align-items-center justify-content-between h-100" style="background:#f0f4f8">
           <div style="font-size:.85rem;color:#666">Résultat :</div>
           <span class="badge px-3 py-2" style="font-size:1rem;background:<?= $allUesOk ? '#34a853' : '#ea4335' ?>">
-            <?= $allUesOk ? 'ADMIS(E)' : ($isNivSup ? 'À REPASSER' : 'AJOURNÉ(E)') ?>
+            <?= $resultLabel ?>
           </span>
         </div>
       </div>
@@ -1005,15 +1174,11 @@ if (!$print) {
 
     <!-- Signatures -->
     <div class="row mt-5 pt-3" style="border-top:1px solid #ddd">
-      <div class="col-4 text-center">
-        <div class="text-muted mb-4" style="font-size:.8rem">Signature de l'enseignant</div>
-        <div style="border-bottom:1px solid #999;margin:0 2rem"></div>
-      </div>
-      <div class="col-4 text-center">
+      <div class="col-6 text-center">
         <div class="text-muted mb-4" style="font-size:.8rem">Responsable pédagogique</div>
         <div style="border-bottom:1px solid #999;margin:0 2rem"></div>
       </div>
-      <div class="col-4 text-center">
+      <div class="col-6 text-center">
         <div class="text-muted mb-4" style="font-size:.8rem">Cachet et signature du Directeur</div>
         <div style="border-bottom:1px solid #999;margin:0 2rem"></div>
       </div>

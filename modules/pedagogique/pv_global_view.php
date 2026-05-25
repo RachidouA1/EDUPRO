@@ -289,6 +289,11 @@ foreach ($ues as $ue) {
     <span><strong>Matières :</strong>&nbsp;<?= count($all_matieres_ref) ?></span>
     <span><strong>Date :</strong>&nbsp;<?= date('d/m/Y') ?></span>
     <span><strong>Filière :</strong>&nbsp;<?= h($filiere['nom']??'') ?></span>
+    <?php if ($session_num === 2 && ($nbValidesS1 ?? 0) > 0): ?>
+    <span style="background:#d4edda;color:#155724;padding:3px 10px;border-radius:4px;font-weight:600">
+      &#10003; <?= $nbValidesS1 ?> étudiant(s) exclu(s) – déjà validé(s) en Session 1
+    </span>
+    <?php endif; ?>
   </div>
 
   <?php if (empty($etudiants)): ?>

@@ -145,6 +145,13 @@ if (isset($_GET['export_excel'])) {
     </div>
   </div>
 
+  <?php if ($session_num === 2 && ($validatedS1 ?? false)): ?>
+  <div style="background:#d4edda;border:1px solid #c3e6cb;border-radius:8px;padding:12px 18px;margin-bottom:14px;color:#155724;font-size:13px">
+    <strong>&#10003; Cet étudiant a validé toutes ses UE en Session 1.</strong>
+    Son résultat est déjà enregistré – aucune reprise en session 2 n'est requise.
+  </div>
+  <?php endif; ?>
+
   <div class="info-grid">
     <div class="info-card">
       <div class="lbl">Étudiant</div>

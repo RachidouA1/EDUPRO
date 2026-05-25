@@ -256,6 +256,20 @@ if ($matiereId && $anneeId && (!$needsSemestre || $semestreId)) {
                 $pStmt->execute([$matiereId, $anneeId]);
             }
             foreach ($pStmt->fetchAll() as $row) { $prevNotes[$row['etudiant_id']] = $row; }
+
+            // Exclure les étudiants ayant déjà validé la matière en session 1
+            // VP >= 10, ASB >= 12, niveau supérieur >= 10
+            $defaultSeuil = ($selectedMatiere['filiere_code'] === 'ASB') ? 12 : 10;
+            $seuilValid = (float)($selectedMatiere['seuil_reussite'] ?? $defaultSeuil);
+            $nbValidesS1 = 0;
+            $etudiants = array_values(array_filter($etudiants, function($e) use ($prevNotes, $seuilValid, &$nbValidesS1) {
+                $pn = $prevNotes[$e['id']] ?? null;
+                if ($pn !== null && $pn['note_finale'] !== null && (float)$pn['note_finale'] >= $seuilValid) {
+                    $nbValidesS1++;
+                    return false; // validé en S1 → pas de rattrapage
+                }
+                return true;
+            }));
         }
     }
 }
@@ -659,6 +673,15 @@ document.addEventListener('DOMContentLoaded', function () {
         &mdash; UE : <strong><?= h($selectedMatiere['ue_code']) ?></strong> <?= h($selectedMatiere['ue_nom']) ?>
       <?php endif; ?>
     </div>
+    <?php if ($sessionNum === 2 && ($nbValidesS1 ?? 0) > 0): ?>
+    <div class="alert alert-success py-2 fs-sm mb-3 d-flex align-items-center gap-2">
+      <i class="fas fa-check-circle"></i>
+      <span>
+        <strong><?= $nbValidesS1 ?> étudiant(s)</strong> ont validé cette matière en Session 1
+        (note ≥ <?= number_format($seuilValid, 0) ?>/20) et sont exclus de la saisie Session 2.
+      </span>
+    </div>
+    <?php endif; ?>
     <?php if ($isNivSup): ?>
     <div class="alert py-2 fs-sm mb-3 d-flex flex-wrap gap-2 align-items-center" style="background:#fff8e1;border:1px solid #ffe082;color:#5d4037">
       <i class="fas fa-graduation-cap me-1"></i><strong>Règles niveau supérieur :</strong>
@@ -841,9 +864,14 @@ document.querySelectorAll('.note-cc, .note-exam').forEach(el => {
 <?php elseif ($matiereId && $anneeId && (!$needsSemestre || $semestreId)): ?>
 <div class="card no-print">
   <div class="card-body empty-state">
-    <i class="fas fa-users"></i>
+    <i class="fas fa-<?= ($sessionNum === 2 && ($nbValidesS1 ?? 0) > 0) ? 'check-circle text-success' : 'users' ?>"></i>
+    <?php if ($sessionNum === 2 && ($nbValidesS1 ?? 0) > 0): ?>
+    <h5>Tous les étudiants ont validé en Session 1</h5>
+    <p class="text-muted">Les <?= $nbValidesS1 ?> étudiant(s) ont obtenu une note ≥ <?= number_format($seuilValid ?? 12, 0) ?>/20 en Session 1. Aucune saisie Session 2 nécessaire pour cette matière.</p>
+    <?php else: ?>
     <h5>Aucun étudiant</h5>
     <p class="text-muted">Aucun étudiant actif trouvé pour cette matière et cette année.</p>
+    <?php endif; ?>
   </div>
 </div>
 <?php else: ?>

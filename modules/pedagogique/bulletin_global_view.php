@@ -44,6 +44,8 @@ if (!$filiere) {
 }
 
 $isSansSemestre = in_array($filiere['code'] ?? '', $SANS_SEMESTRE_CODES);
+// Seuil de validation : ASB >= 12, VP >= 10
+$seuilFiliere = ($filiere['code'] === 'ASB') ? 12 : 10;
 
 if (!$isSansSemestre && !$semestre_id) {
     die('<p style="font-family:sans-serif;padding:2rem">Paramètres manquants.</p>');
@@ -171,11 +173,11 @@ if (isset($_GET['export_excel'])) {
         echo '<td>' . strtoupper($e['nom']??'') . ' ' . ucfirst($e['prenom']??'') . '</td>';
         foreach ($matieres as $m) {
             $note = $notes_index[$e['id']][$m['id']] ?? null;
-            $bg   = ($note !== null && $note >= 12) ? '#d4edda' : ($note !== null ? '#f8d7da' : '#fff');
+            $bg   = ($note !== null && $note >= $seuilFiliere) ? '#d4edda' : ($note !== null ? '#f8d7da' : '#fff');
             echo '<td style="text-align:center;background:' . $bg . '">' . ($note !== null ? number_format($note,1) : '–') . '</td>';
         }
         $moy = $moyennes[$e['id']];
-        $mbg = ($moy !== null && $moy >= 12) ? '#d4edda' : ($moy !== null ? '#f8d7da' : '#fff');
+        $mbg = ($moy !== null && $moy >= $seuilFiliere) ? '#d4edda' : ($moy !== null ? '#f8d7da' : '#fff');
         echo '<td style="text-align:center;font-weight:bold;background:' . $mbg . '">' . ($moy !== null ? number_format($moy,2) : '–') . '</td>';
         if ($moy === null)       $mention_xls = '–';
         elseif ($moy >= 16)      $mention_xls = 'Très Bien';
@@ -183,7 +185,7 @@ if (isset($_GET['export_excel'])) {
         elseif ($moy >= 12)      $mention_xls = 'Assez Bien';
         elseif ($moy >= 10)      $mention_xls = 'Passable';
         else                     $mention_xls = 'Insuffisant';
-        $decision_xls = $moy === null ? '–' : ($moy >= 12 ? 'VALIDÉ' : 'AJOURNÉ');
+        $decision_xls = $moy === null ? '–' : ($moy >= $seuilFiliere ? 'VALIDÉ' : 'AJOURNÉ');
         echo '<td style="text-align:center;font-weight:bold">' . $mention_xls . '</td>';
         echo '<td style="text-align:center;font-weight:bold;background:' . $mbg . '">' . $decision_xls . '</td>';
         echo '</tr>';
@@ -311,7 +313,7 @@ if (isset($_GET['export_excel'])) {
           <td class="etu-col"><?= strtoupper(h($e['nom'])) ?> <?= ucfirst(h($e['prenom'])) ?></td>
           <?php foreach ($matieres as $m):
             $note = $notes_index[$e['id']][$m['id']] ?? null;
-            $cls  = ($note !== null && $note >= 12) ? 'nv' : ($note !== null ? 'nnv' : '');
+            $cls  = ($note !== null && $note >= $seuilFiliere) ? 'nv' : ($note !== null ? 'nnv' : '');
           ?>
             <td class="<?= $cls ?>">
               <?= $note !== null ? number_format($note,1) : '–' ?>
@@ -319,14 +321,14 @@ if (isset($_GET['export_excel'])) {
           <?php endforeach; ?>
           <?php
             $moy     = $moyennes[$e['id']];
-            $moy_cls = ($moy !== null && $moy >= 12) ? 'nv' : ($moy !== null ? 'nnv' : '');
+            $moy_cls = ($moy !== null && $moy >= $seuilFiliere) ? 'nv' : ($moy !== null ? 'nnv' : '');
             if ($moy === null)       $mention = '–';
             elseif ($moy >= 16)      $mention = 'Très Bien';
             elseif ($moy >= 14)      $mention = 'Bien';
             elseif ($moy >= 12)      $mention = 'Assez Bien';
             elseif ($moy >= 10)      $mention = 'Passable';
             else                     $mention = 'Insuffisant';
-            $decision = $moy === null ? '–' : ($moy >= 12 ? 'VALIDÉ' : 'AJOURNÉ');
+            $decision = $moy === null ? '–' : ($moy >= $seuilFiliere ? 'VALIDÉ' : 'AJOURNÉ');
           ?>
           <td class="<?= $moy_cls ?> moy-cell">
             <?= $moy !== null ? number_format($moy,2) : '–' ?>

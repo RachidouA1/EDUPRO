@@ -58,6 +58,33 @@ if (isset($_GET['action']) && $_GET['action'] === 'pv_individuel' && isset($_GET
         $stmt->execute([$etudiant['filiere_id'], $semestre_num]);
         $ues = $stmt->fetchAll();
 
+        // ── Session 2 : vérifier si l'étudiant a validé toutes ses UE en session 1 ──
+        $validatedS1 = false;
+        if ($session_num === 2 && !empty($ues)) {
+            $ueIds  = implode(',', array_map(fn($u) => (int)$u['id'], $ues));
+            $matsS1 = $db->query("SELECT id, coefficient, ue_id FROM matieres WHERE ue_id IN ($ueIds) AND actif=1")->fetchAll();
+            if (!empty($matsS1)) {
+                $matIdsStr = implode(',', array_map(fn($m) => (int)$m['id'], $matsS1));
+                $s1Rows    = $db->query("SELECT matiere_id, note_finale FROM notes
+                    WHERE etudiant_id = $etudiant_id AND matiere_id IN ($matIdsStr)
+                      AND annee_id = $annee_id AND session = 1")->fetchAll();
+                $s1Notes = [];
+                foreach ($s1Rows as $r) $s1Notes[(int)$r['matiere_id']] = (float)$r['note_finale'];
+                $allUesValS1 = true;
+                foreach ($ues as $ue) {
+                    $pts = 0; $coef = 0;
+                    foreach ($matsS1 as $m) {
+                        if ((int)$m['ue_id'] !== (int)$ue['id']) continue;
+                        $nf = $s1Notes[(int)$m['id']] ?? null;
+                        if ($nf !== null) { $pts += $nf * (float)$m['coefficient']; $coef += (float)$m['coefficient']; }
+                    }
+                    $moy = $coef > 0 ? $pts / $coef : 0;
+                    if ($moy < 10) { $allUesValS1 = false; break; }
+                }
+                $validatedS1 = $allUesValS1;
+            }
+        }
+
         $ues_data = [];
         $total_points_ue = 0;
         $total_coeff_ue  = 0;
@@ -86,7 +113,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'pv_individuel' && isset($_GET
 
                 if ($note_val === null) $toutes_notes_saisies = false;
 
-                $seuil        = (int)($mat['seuil_reussite'] ?? 12);
+                $seuil        = (int)($mat['seuil_reussite'] ?? 10);
                 $mat_valide   = ($note_val !== null && $note_val >= $seuil);
 
                 $matieres_data[] = [
@@ -194,6 +221,42 @@ if (isset($_GET['action']) && $_GET['action'] === 'pv_global' && isset($_GET['fi
             $stmt = $db->prepare("SELECT * FROM matieres WHERE ue_id = ? AND actif = 1 ORDER BY nom");
             $stmt->execute([$ue['id']]);
             $matieres_by_ue[$ue['id']] = $stmt->fetchAll();
+        }
+
+        // ── Session 2 : exclure les étudiants ayant validé toutes leurs UE en session 1 ──
+        $nbValidesS1 = 0;
+        if ($session_num === 2 && !empty($etudiants) && !empty($ues)) {
+            $allMatIds = [];
+            foreach ($ues as $ue) {
+                foreach ($matieres_by_ue[$ue['id']] ?? [] as $mat) $allMatIds[] = (int)$mat['id'];
+            }
+            if (!empty($allMatIds)) {
+                $etuIds = implode(',', array_map(fn($e) => (int)$e['id'], $etudiants));
+                $matIds = implode(',', $allMatIds);
+                $s1Rows = $db->query("SELECT etudiant_id, matiere_id, note_finale FROM notes
+                    WHERE etudiant_id IN ($etuIds) AND matiere_id IN ($matIds)
+                      AND annee_id = $annee_id AND session = 1")->fetchAll();
+                $s1Notes = [];
+                foreach ($s1Rows as $r) {
+                    $s1Notes[(int)$r['etudiant_id']][(int)$r['matiere_id']] = (float)$r['note_finale'];
+                }
+                $validesS1Ids = [];
+                foreach ($etudiants as $e) {
+                    $eId = (int)$e['id'];
+                    $allUesVal = true;
+                    foreach ($ues as $ue) {
+                        $pts = 0; $coef = 0;
+                        foreach ($matieres_by_ue[$ue['id']] ?? [] as $mat) {
+                            $nf = $s1Notes[$eId][(int)$mat['id']] ?? null;
+                            if ($nf !== null) { $pts += $nf * (float)$mat['coefficient']; $coef += (float)$mat['coefficient']; }
+                        }
+                        $moy_ue = $coef > 0 ? $pts / $coef : 0;
+                        if ($moy_ue < 10) { $allUesVal = false; break; }
+                    }
+                    if ($allUesVal) { $validesS1Ids[] = $eId; $nbValidesS1++; }
+                }
+                $etudiants = array_values(array_filter($etudiants, fn($e) => !in_array((int)$e['id'], $validesS1Ids)));
+            }
         }
 
         // Notes par étudiant
