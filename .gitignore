@@ -1,0 +1,8 @@
+# Secrets et configuration locale — ne jamais committer
+.claude/settings.local.json
+
+# Dépendances
+node_modules/
+
+# Logs
+*.log
