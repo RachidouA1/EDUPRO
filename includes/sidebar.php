@@ -215,14 +215,26 @@ HTML;
       . '<a href="' . APP_URL . '/modules/comptabilite/recu.php" class="nav-link' . isActive('/comptabilite/recu') . '"><i class="fas fa-receipt"></i> Reçus de paiement</a>'
     ) ?>
 
+    <?php
+      $nbDemandesCpt = 0;
+      try { $stmtNb = getDB()->query("SELECT COUNT(*) FROM demandes_paiement_enseignant WHERE statut='en_attente'"); $nbDemandesCpt = (int)$stmtNb->fetchColumn(); } catch (PDOException $e) {}
+      $cptDemBadge = $nbDemandesCpt > 0 ? ' <span class="badge bg-danger ms-auto">'.$nbDemandesCpt.'</span>' : '';
+    ?>
     <?= sidebarGroup('cpt-paiements', 'Paiements', 'fa-money-bill',
-        ['/enseignants/','/etudiants/'],
-        '<a href="' . APP_URL . '/modules/enseignants/index.php" class="nav-link' . isActive('/enseignants/') . '"><i class="fas fa-chalkboard-teacher"></i> Paiements enseignants</a>'
+        ['/enseignants/','/etudiants/','/demandes_paiement'],
+        '<a href="' . APP_URL . '/modules/administration/demandes_paiement.php" class="nav-link d-flex align-items-center justify-content-between' . isActive('/demandes_paiement') . '"><span><i class="fas fa-file-invoice-dollar"></i> Vacations enseignants</span>' . $cptDemBadge . '</a>'
+      . '<a href="' . APP_URL . '/modules/enseignants/index.php" class="nav-link' . isActive('/enseignants/') . '"><i class="fas fa-chalkboard-teacher"></i> Paiements enseignants</a>'
       . '<a href="' . APP_URL . '/modules/etudiants/index.php" class="nav-link' . isActive('/etudiants/') . '"><i class="fas fa-user-graduate"></i> Paiements étudiants</a>'
     ) ?>
 
     <!-- ===== COORDINATEUR ===== -->
     <?php elseif ($role === 'coordinateur'): ?>
+
+    <?php
+      $nbDemandesCoord = 0;
+      try { $stmtDC = getDB()->prepare("SELECT COUNT(*) FROM demandes_paiement_enseignant WHERE coordinateur_id=? AND statut='en_attente'"); $stmtDC->execute([$user['id']]); $nbDemandesCoord = (int)$stmtDC->fetchColumn(); } catch (PDOException $e) {}
+      $coordPayBadge = $nbDemandesCoord > 0 ? ' <span class="badge bg-warning text-dark ms-auto">'.$nbDemandesCoord.'</span>' : '';
+    ?>
 
     <?= sidebarGroup('coord-section', 'Ma Section', 'fa-user-graduate',
         ['/etudiants/'],
@@ -242,6 +254,12 @@ HTML;
       . '<a href="' . APP_URL . '/modules/pedagogique/bulletins.php" class="nav-link' . isActive('/pedagogique/bulletins') . '"><i class="fas fa-file-alt"></i> Bulletins de notes</a>'
       . '<a href="' . APP_URL . '/modules/pedagogique/pv.php" class="nav-link' . isActive('/pedagogique/pv') . '"><i class="fas fa-file-contract"></i> PV Supérieur</a>'
       . '<a href="' . APP_URL . '/modules/emploi_du_temps/index.php" class="nav-link' . isActive('/emploi_du_temps/') . '"><i class="fas fa-calendar-week"></i> Emplois du temps</a>'
+    ) ?>
+
+    <?= sidebarGroup('coord-suivi', 'Suivi &amp; Paiements', 'fa-tasks',
+        ['/suivi_cours', '/demandes_paiement'],
+        '<a href="' . APP_URL . '/modules/administration/suivi_cours.php" class="nav-link' . isActive('/suivi_cours') . '"><i class="fas fa-tasks"></i> Suivi des cours</a>'
+      . '<a href="' . APP_URL . '/modules/administration/demandes_paiement.php" class="nav-link d-flex align-items-center justify-content-between' . isActive('/demandes_paiement') . '"><span><i class="fas fa-file-invoice-dollar"></i> Demandes paiement</span>' . $coordPayBadge . '</a>'
     ) ?>
 
     <!-- ===== ÉTUDIANT ===== -->
