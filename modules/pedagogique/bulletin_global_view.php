@@ -44,8 +44,8 @@ if (!$filiere) {
 }
 
 $isSansSemestre = in_array($filiere['code'] ?? '', $SANS_SEMESTRE_CODES);
-// Seuil de validation : ASB >= 12, VP >= 10
-$seuilFiliere = ($filiere['code'] === 'ASB') ? 12 : 10;
+// Seuil de validation : VP >= 10, tous les autres (ASB, niveau moyen) >= 12
+$seuilFiliere = ($filiere['code'] === 'VP') ? 10 : 12;
 
 if (!$isSansSemestre && !$semestre_id) {
     die('<p style="font-family:sans-serif;padding:2rem">Paramètres manquants.</p>');
@@ -151,7 +151,7 @@ if (isset($_GET['export_excel'])) {
     echo '<table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;font-size:11px">';
 
     echo '<tr style="background:#0f2d5c;color:white"><td colspan="' . $nb_cols . '" style="text-align:center;font-size:14px;font-weight:bold">';
-    echo 'ÉCOLE PRIVÉE DE SANTÉ IBN ROCHD – BULLETIN DE NOTES GLOBAL<br>';
+    echo 'ÉCOLE PRIVÉE DE SANTÉ IBN ROCHD – RELEVÉ DE NOTES GLOBAL<br>';
     echo htmlspecialchars($filiere['nom']??'');
     if ($niveau) echo ' – ' . htmlspecialchars($niveau['nom']??'');
     echo ($semestre ? ' – ' . htmlspecialchars($semestre['nom']??'') : '') . '<br>';
@@ -166,6 +166,11 @@ if (isset($_GET['export_excel'])) {
     echo '<th>Moyenne</th><th>Mention</th><th>Décision</th></tr>';
 
     foreach ($etudiants as $idx => $e) {
+        $allNotesOkXl = true;
+        foreach ($matieres as $m) {
+            $nx = $notes_index[$e['id']][$m['id']] ?? null;
+            if ($nx === null || (float)$nx < $seuilFiliere) { $allNotesOkXl = false; break; }
+        }
         $row_bg = ($idx % 2 === 0) ? '#fff' : '#f5f5f5';
         echo '<tr style="background:' . $row_bg . '">';
         echo '<td style="text-align:center">' . ($idx+1) . '</td>';
@@ -177,7 +182,7 @@ if (isset($_GET['export_excel'])) {
             echo '<td style="text-align:center;background:' . $bg . '">' . ($note !== null ? number_format($note,1) : '–') . '</td>';
         }
         $moy = $moyennes[$e['id']];
-        $mbg = ($moy !== null && $moy >= $seuilFiliere) ? '#d4edda' : ($moy !== null ? '#f8d7da' : '#fff');
+        $mbg = $allNotesOkXl ? '#d4edda' : ($moy !== null ? '#f8d7da' : '#fff');
         echo '<td style="text-align:center;font-weight:bold;background:' . $mbg . '">' . ($moy !== null ? number_format($moy,2) : '–') . '</td>';
         if ($moy === null)       $mention_xls = '–';
         elseif ($moy >= 16)      $mention_xls = 'Très Bien';
@@ -185,7 +190,7 @@ if (isset($_GET['export_excel'])) {
         elseif ($moy >= 12)      $mention_xls = 'Assez Bien';
         elseif ($moy >= 10)      $mention_xls = 'Passable';
         else                     $mention_xls = 'Insuffisant';
-        $decision_xls = $moy === null ? '–' : ($moy >= $seuilFiliere ? 'VALIDÉ' : 'AJOURNÉ');
+        $decision_xls = $moy === null ? '–' : ($allNotesOkXl ? 'VALIDÉ' : 'AJOURNÉ');
         echo '<td style="text-align:center;font-weight:bold">' . $mention_xls . '</td>';
         echo '<td style="text-align:center;font-weight:bold;background:' . $mbg . '">' . $decision_xls . '</td>';
         echo '</tr>';
@@ -225,6 +230,9 @@ if (isset($_GET['export_excel'])) {
     .tbl{width:100%;border-collapse:collapse;font-size:11px}
     .tbl thead th{background:#0f2d5c;color:#fff;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;padding:9px 6px;text-align:center;border-right:1px solid rgba(255,255,255,.12)}
     .tbl thead th.etu-col{text-align:left;padding-left:10px}
+    .th-mat{min-width:28px;max-width:36px;white-space:nowrap;vertical-align:bottom!important;padding:0 3px 6px!important;height:120px}
+    .th-mat-inner{writing-mode:vertical-rl;transform:rotate(180deg);font-size:10px;text-transform:none;letter-spacing:0;white-space:nowrap;display:block}
+    .th-mat-coef{display:block;writing-mode:horizontal-tb;transform:none;font-size:9px;opacity:.75;text-align:center;font-weight:400;margin-top:3px}
     .tbl td{padding:8px 6px;border-bottom:1px solid #f0f0f0;text-align:center;vertical-align:middle}
     .tbl tbody tr:hover{background:#f8fbff}
     .tbl tbody tr:last-child td{border-bottom:none}
@@ -260,7 +268,7 @@ if (isset($_GET['export_excel'])) {
   <div class="doc-header">
     <div class="doc-header-info">
       <h1>ÉCOLE PRIVÉE DE SANTÉ IBN ROCHD</h1>
-      <h2>BULLETIN DE NOTES GLOBAL</h2>
+      <h2>RELEVÉ DE NOTES GLOBAL</h2>
       <div class="doc-header-meta">
         <?= h($filiere['nom']??'') ?>
         <?php if ($niveau): ?> &nbsp;|&nbsp; <?= h($niveau['nom']??'') ?><?php endif; ?>
@@ -295,9 +303,9 @@ if (isset($_GET['export_excel'])) {
           <th style="min-width:90px">Matricule</th>
           <th class="etu-col">Nom &amp; Prénom</th>
           <?php foreach ($matieres as $m): ?>
-            <th style="min-width:80px;word-break:break-word;white-space:normal">
-              <?= h($m['nom']??'') ?>
-              <br><span style="font-weight:400;font-size:9px;opacity:.8">(<?= $m['coefficient'] ?>)</span>
+            <th class="th-mat">
+              <span class="th-mat-inner"><?= h($m['nom']??'') ?></span>
+              <span class="th-mat-coef">(<?= $m['coefficient'] ?>)</span>
             </th>
           <?php endforeach; ?>
           <th style="min-width:60px">Moy.</th>
@@ -311,6 +319,13 @@ if (isset($_GET['export_excel'])) {
           <td><?= $idx + 1 ?></td>
           <td style="font-family:monospace;font-size:10px"><?= h($e['matricule']) ?></td>
           <td class="etu-col"><?= strtoupper(h($e['nom'])) ?> <?= ucfirst(h($e['prenom'])) ?></td>
+          <?php
+            $allNotesOk = true;
+            foreach ($matieres as $m) {
+                $nx = $notes_index[$e['id']][$m['id']] ?? null;
+                if ($nx === null || (float)$nx < $seuilFiliere) { $allNotesOk = false; break; }
+            }
+          ?>
           <?php foreach ($matieres as $m):
             $note = $notes_index[$e['id']][$m['id']] ?? null;
             $cls  = ($note !== null && $note >= $seuilFiliere) ? 'nv' : ($note !== null ? 'nnv' : '');
@@ -321,14 +336,14 @@ if (isset($_GET['export_excel'])) {
           <?php endforeach; ?>
           <?php
             $moy     = $moyennes[$e['id']];
-            $moy_cls = ($moy !== null && $moy >= $seuilFiliere) ? 'nv' : ($moy !== null ? 'nnv' : '');
+            $moy_cls = $allNotesOk ? 'nv' : ($moy !== null ? 'nnv' : '');
             if ($moy === null)       $mention = '–';
             elseif ($moy >= 16)      $mention = 'Très Bien';
             elseif ($moy >= 14)      $mention = 'Bien';
             elseif ($moy >= 12)      $mention = 'Assez Bien';
             elseif ($moy >= 10)      $mention = 'Passable';
             else                     $mention = 'Insuffisant';
-            $decision = $moy === null ? '–' : ($moy >= $seuilFiliere ? 'VALIDÉ' : 'AJOURNÉ');
+            $decision = $moy === null ? '–' : ($allNotesOk ? 'VALIDÉ' : 'AJOURNÉ');
           ?>
           <td class="<?= $moy_cls ?> moy-cell">
             <?= $moy !== null ? number_format($moy,2) : '–' ?>

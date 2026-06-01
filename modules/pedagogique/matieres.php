@@ -400,7 +400,7 @@ include APP_ROOT . '/includes/header.php';
               <select name="niveau_id" id="f_niveau_id" class="form-select">
                 <option value="">-- Tous --</option>
                 <?php foreach ($niveaux as $n): ?>
-                  <option value="<?= $n['id'] ?>" data-filiere="<?= $n['filiere_id'] ?>"><?= h($n['filiere_nom']) ?> – <?= h($n['nom']) ?></option>
+                  <option value="<?= $n['id'] ?>" data-filiere="<?= $n['filiere_id'] ?>">Année <?= (int)($n['ordre'] ?? 1) ?></option>
                 <?php endforeach; ?>
               </select>
             </div>
@@ -458,7 +458,7 @@ include APP_ROOT . '/includes/header.php';
             </div>
             <div class="col-md-3"></div>
             <?php if (!empty($ues_list)): ?>
-            <div class="col-12">
+            <div class="col-12" id="ue_field_wrap">
               <label class="form-label">Unité d'Enseignement (UE) <small class="text-muted">– Niveau supérieur uniquement</small></label>
               <select name="ue_id" id="f_ue_id" class="form-select">
                 <option value="">-- Aucune UE --</option>
@@ -468,6 +468,9 @@ include APP_ROOT . '/includes/header.php';
                   </option>
                 <?php endforeach; ?>
               </select>
+              <div id="ue_locked_msg" class="form-text text-warning" style="display:none">
+                <i class="fas fa-lock me-1"></i>Non applicable pour cette filière (ASB / VP)
+              </div>
             </div>
             <?php endif; ?>
           </div>
@@ -617,6 +620,17 @@ function updateSemestreRow() {
     fmWrap.style.display = isNoSem ? 'none' : '';
     if (isNoSem) document.getElementById('f_formule_calcul').value = 'demi_somme';
   }
+
+  // Verrouiller le champ UE pour ASB / VP
+  const ueField   = document.getElementById('f_ue_id');
+  const ueWrap    = document.getElementById('ue_field_wrap');
+  const ueMsg     = document.getElementById('ue_locked_msg');
+  if (ueField) {
+    ueField.disabled = isNoSem;
+    if (isNoSem) ueField.value = '';
+  }
+  if (ueWrap)  ueWrap.style.opacity = isNoSem ? '0.5' : '';
+  if (ueMsg)   ueMsg.style.display  = isNoSem ? '' : 'none';
 }
 
 function filterNiveaux(selectedId) {

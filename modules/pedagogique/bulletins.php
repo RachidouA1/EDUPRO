@@ -95,7 +95,7 @@ if ($hasData) {
     } else {
         $notesStmt = $db->prepare("
             SELECT n.*, m.nom as matiere_nom, m.code as matiere_code, m.coefficient,
-                   COALESCE(m.seuil_reussite, 10) as seuil_reussite,
+                   COALESCE(m.seuil_reussite, 12) as seuil_reussite,
                    m.ue_id, NULL as ue_nom, NULL as ue_code
             FROM notes n
             JOIN matieres m ON m.id = n.matiere_id
@@ -135,7 +135,7 @@ if ($hasData) {
         } else {
             $s1FbStmt = $db->prepare("
                 SELECT n.*, m.nom as matiere_nom, m.code as matiere_code, m.coefficient,
-                       COALESCE(m.seuil_reussite, 10) as seuil_reussite,
+                       COALESCE(m.seuil_reussite, 12) as seuil_reussite,
                        m.ue_id, NULL as ue_nom, NULL as ue_code
                 FROM notes n JOIN matieres m ON m.id = n.matiere_id
                 WHERE n.etudiant_id=? AND n.annee_id=? AND n.semestre_id=? AND n.session=1
@@ -267,7 +267,7 @@ if ($hasData) {
             }
         } else {
             $s1NStmt = $db->prepare("
-                SELECT n.note_finale, COALESCE(m.seuil_reussite, 10) as seuil
+                SELECT n.note_finale, COALESCE(m.seuil_reussite, 12) as seuil
                 FROM notes n JOIN matieres m ON m.id = n.matiere_id
                 WHERE n.etudiant_id=? AND n.annee_id=? AND n.semestre_id=? AND n.session=1
             ");
@@ -375,7 +375,7 @@ if (isset($_GET['export_excel']) && $etudiant && !empty($notes)) {
     echo '<table border="1" cellpadding="5" cellspacing="0" style="border-collapse:collapse;width:100%">';
 
     echo '<tr><td colspan="6" style="text-align:center;font-size:16px;font-weight:bold;background:#0f2d5c;color:white">';
-    echo 'ÉCOLE PRIVÉE DE SANTÉ IBN ROCHD<br>BULLETIN DE NOTES<br>';
+    echo 'ÉCOLE PRIVÉE DE SANTÉ IBN ROCHD<br>RELEVÉ DE NOTES<br>';
     echo htmlspecialchars($xlAnneeLabel);
     if ($xlSemestreLabel) echo ' – ' . htmlspecialchars($xlSemestreLabel);
     echo '<br>' . ($sessionNum == 1 ? '1ÈRE SESSION' : '2ÈME SESSION (RATTRAPAGE)');
@@ -444,7 +444,7 @@ if (isset($_GET['export_excel']) && $etudiant && !empty($notes)) {
         }
     } else {
         echo '<tr style="background:#1a5276;color:white"><th>Code</th><th>Matière</th><th>Coeff</th><th>Examen /20</th><th>Note Finale /20</th><th>Validation</th></tr>';
-        $defaultSeuilXl = ($etudiant['filiere_code'] === 'ASB') ? 12 : 10;
+        $defaultSeuilXl = 12;
         $xlAllNivMoyVal = true;
         foreach ($notes as $n) {
             $seuil_n = (float)($n['seuil_reussite'] ?? $defaultSeuilXl);
@@ -460,7 +460,7 @@ if (isset($_GET['export_excel']) && $etudiant && !empty($notes)) {
             echo '<td style="text-align:center">' . ($n['note_finale'] !== null ? ($nValXl ? 'Validé' : 'Non validée') : '–') . '</td>';
             echo '</tr>';
         }
-        $defaultSeuilXlRes = ($etudiant['filiere_code'] === 'ASB') ? 12 : 10;
+        $defaultSeuilXlRes = 12;
         echo '<tr style="font-weight:bold;background:#e3f2fd"><td colspan="4" style="text-align:right">Moyenne générale :</td>';
         echo '<td style="text-align:center">' . ($xlMoyenne !== null ? number_format($xlMoyenne,2).'/20' : '–') . '</td>';
         echo '<td style="text-align:center"></td></tr>';
@@ -515,7 +515,7 @@ foreach ($nv_rows as $nv) {
     $niveaux_by_filiere[(int)$nv['filiere_id']][] = ['id' => (int)$nv['id'], 'nom' => $nv['nom']];
 }
 
-$pageTitle  = 'Bulletins de notes';
+$pageTitle  = 'Relevés de notes';
 $breadcrumb = ['Pédagogie' => null, 'Bulletins' => null];
 
 if (!$print) {
@@ -590,7 +590,7 @@ if (!$print) {
 
 <?php if (!$print): ?>
 <div class="page-header">
-  <h2><i class="fas fa-file-alt me-2 text-primary"></i>Bulletins de Notes</h2>
+  <h2><i class="fas fa-file-alt me-2 text-primary"></i>Relevés de Notes</h2>
 </div>
 
 <!-- Search Form -->
@@ -714,7 +714,7 @@ if (!$print) {
     // $semestreLabel already set above (handles both standard and niveau supérieur)
     $moyenne  = calculateMoyenne($notes);
     if (!$isNivSup) {
-        $defaultSeuilView = ($etudiant['filiere_code'] === 'ASB') ? 12 : 10;
+        $defaultSeuilView = 12;
         $allNotesValOk = true;
         foreach ($notes as $_n) {
             $s = (float)($_n['seuil_reussite'] ?? $defaultSeuilView);
@@ -765,7 +765,7 @@ if (!$print) {
     <div class="doc-header-info">
       <h1><?= h(strtoupper($bulNom)) ?></h1>
       <?php if ($bulSlogan): ?><h2><?= h($bulSlogan) ?></h2><?php endif; ?>
-      <h2>BULLETIN DE NOTES</h2>
+      <h2>RELEVÉ DE NOTES</h2>
       <div class="doc-header-meta">
         <?= h($anneeLabel) ?><?= !$isSansSemestre && $semestreLabel ? ' &nbsp;|&nbsp; ' . h($semestreLabel) : '' ?>
       </div>
@@ -978,7 +978,7 @@ if (!$print) {
     <div class="mb-4" style="background:linear-gradient(135deg,#0f2d5c,#1a5276);border-radius:8px;padding:18px 22px;color:#fff;display:flex;align-items:center;gap:16px">
       <div class="flex-grow-1 text-center">
         <div style="font-size:.8rem;font-weight:600;opacity:.85;letter-spacing:.5px">ÉCOLE PRIVÉE DE SANTÉ IBN ROCHD</div>
-        <h4 style="font-weight:700;margin:3px 0;font-size:1.1rem">BULLETIN DE NOTES</h4>
+        <h4 style="font-weight:700;margin:3px 0;font-size:1.1rem">RELEVÉ DE NOTES</h4>
         <div style="font-size:.8rem;opacity:.85"><?= h($anneeLabel) ?><?= !$isSansSemestre ? ' – ' . h($semestreLabel) : '' ?></div>
       </div>
       <div class="text-end" style="flex-shrink:0">
