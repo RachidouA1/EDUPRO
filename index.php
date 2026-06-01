@@ -49,16 +49,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   <form method="POST" novalidate>
     <div class="mb-3">
-      <label class="form-label">Email ou Matricule</label>
+      <label class="form-label">Adresse email</label>
       <div class="input-group">
-        <span class="input-group-text"><i class="fas fa-user text-muted"></i></span>
-        <input type="text" name="identifiant" class="form-control"
-               placeholder="email@epsi.sn ou ETU2025-001"
+        <span class="input-group-text"><i class="fas fa-envelope text-muted"></i></span>
+        <input type="email" name="identifiant" class="form-control"
+               placeholder="email@epsi.sn"
                value="<?= h($_POST['identifiant'] ?? '') ?>" required autofocus autocomplete="username">
-      </div>
-      <div class="form-text text-muted" style="font-size:.75rem">
-        <i class="fas fa-info-circle me-1"></i>
-        Étudiants : numéro matricule &nbsp;|&nbsp; Personnel : adresse email
       </div>
     </div>
     <div class="mb-4">

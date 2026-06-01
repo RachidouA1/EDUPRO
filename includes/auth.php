@@ -33,19 +33,8 @@ function requireRole($role): void {
 function login(string $identifier, string $password): bool {
     $db = getDB();
 
-    if (str_contains($identifier, '@')) {
-        // Connexion par email (staff : admin, directeur, scolarite, enseignant, comptable)
-        $stmt = $db->prepare("SELECT * FROM users WHERE email = ? AND actif = 1");
-        $stmt->execute([$identifier]);
-    } else {
-        // Connexion par matricule (étudiants uniquement)
-        $stmt = $db->prepare("
-            SELECT u.* FROM users u
-            INNER JOIN etudiants e ON e.id = u.reference_id
-            WHERE e.matricule = ? AND u.role = 'etudiant' AND u.actif = 1
-        ");
-        $stmt->execute([strtoupper(trim($identifier))]);
-    }
+    $stmt = $db->prepare("SELECT * FROM users WHERE email = ? AND actif = 1");
+    $stmt->execute([$identifier]);
 
     $user = $stmt->fetch();
 

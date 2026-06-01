@@ -262,20 +262,6 @@ HTML;
       . '<a href="' . APP_URL . '/modules/administration/demandes_paiement.php" class="nav-link d-flex align-items-center justify-content-between' . isActive('/demandes_paiement') . '"><span><i class="fas fa-file-invoice-dollar"></i> Demandes paiement</span>' . $coordPayBadge . '</a>'
     ) ?>
 
-    <!-- ===== ÉTUDIANT ===== -->
-    <?php elseif ($role === 'etudiant'): ?>
-
-    <?= sidebarGroup('etu-dossier', 'Mon Dossier', 'fa-id-card',
-        ['/etudiants/'],
-        '<a href="' . APP_URL . '/modules/etudiants/view.php?id=' . (int)($user['reference_id'] ?? 0) . '" class="nav-link' . isActive('/etudiants/view') . '"><i class="fas fa-id-card"></i> Mon Profil</a>'
-      . '<a href="' . APP_URL . '/modules/etudiants/paiements.php?id=' . (int)($user['reference_id'] ?? 0) . '" class="nav-link' . isActive('/etudiants/paiements') . '"><i class="fas fa-receipt"></i> Mes Paiements</a>'
-    ) ?>
-
-    <?= sidebarGroup('etu-resultats', 'Mes Résultats', 'fa-graduation-cap',
-        ['/pedagogique/'],
-        '<a href="' . APP_URL . '/modules/pedagogique/bulletins.php?etudiant_id=' . (int)($user['reference_id'] ?? 0) . '" class="nav-link' . isActive('/pedagogique/bulletins') . '"><i class="fas fa-file-alt"></i> Mes Bulletins</a>'
-    ) ?>
-
     <?php endif; ?>
 
   </div>
