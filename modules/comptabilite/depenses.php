@@ -138,10 +138,14 @@ $anneeActive = getActiveAnnee();
 
 $pageTitle  = 'Dépenses';
 $breadcrumb = ['Comptabilité' => null, 'Dépenses' => null];
+$extraHead  = '<style>
+@media screen { .print-only { display: none !important; } }
+@media print  { .print-only { display: block !important; } }
+</style>';
 include APP_ROOT . '/includes/header.php';
 ?>
 
-<div class="page-header">
+<div class="page-header no-print">
   <h2><i class="fas fa-arrow-circle-up me-2 text-danger"></i>Gestion des Dépenses</h2>
   <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#addDepModal">
     <i class="fas fa-plus me-2"></i><?= $role === 'comptable' ? 'Soumettre une demande' : 'Nouvelle dépense' ?>
@@ -149,14 +153,14 @@ include APP_ROOT . '/includes/header.php';
 </div>
 
 <?php if ($role === 'comptable'): ?>
-<div class="alert alert-info d-flex align-items-center gap-2 mb-3">
+<div class="alert alert-info d-flex align-items-center gap-2 mb-3 no-print">
   <i class="fas fa-info-circle"></i>
   <span>En tant que comptable, vos demandes de dépenses doivent être <strong>autorisées par l'administrateur</strong> avant d'être comptabilisées.</span>
 </div>
 <?php endif; ?>
 
 <?php if (in_array($role, ['admin', 'directeur']) && $nbEnAttente > 0): ?>
-<div class="alert alert-warning d-flex align-items-center gap-2 mb-3">
+<div class="alert alert-warning d-flex align-items-center gap-2 mb-3 no-print">
   <i class="fas fa-clock"></i>
   <strong><?= $nbEnAttente ?> demande(s) de dépense en attente</strong> d'autorisation.
   <a href="?statut=en_attente" class="ms-2 btn btn-sm btn-warning">Voir les demandes</a>
@@ -164,7 +168,7 @@ include APP_ROOT . '/includes/header.php';
 <?php endif; ?>
 
 <!-- Statistiques -->
-<div class="row g-3 mb-4">
+<div class="row g-3 mb-4 no-print">
   <div class="col-md-4">
     <div class="stat-card stat-red">
       <div class="stat-icon"><i class="fas fa-wallet"></i></div>
@@ -190,7 +194,7 @@ include APP_ROOT . '/includes/header.php';
 </div>
 
 <!-- Filtres -->
-<div class="card mb-4">
+<div class="card mb-4 no-print">
   <div class="card-body py-3">
     <form method="GET" class="row g-2 align-items-end">
       <div class="col-md-2">
@@ -228,7 +232,26 @@ include APP_ROOT . '/includes/header.php';
   </div>
 </div>
 
-<?php foreach ($errors as $e): ?><div class="alert alert-danger"><?= h($e) ?></div><?php endforeach; ?>
+<?php foreach ($errors as $e): ?><div class="alert alert-danger no-print"><?= h($e) ?></div><?php endforeach; ?>
+
+<?php
+$_pParts = [];
+if ($anneeId) { foreach ($annees as $_a) { if ($_a['id'] == $anneeId) { $_pParts[] = h($_a['libelle']); break; } } }
+if ($cat)          $_pParts[] = ucfirst($cat);
+if ($mois)         $_pParts[] = date('m/Y', strtotime($mois . '-01'));
+if ($filtreStatut) { $_sl = ['en_attente'=>'En attente','approuvee'=>'Approuvée','rejetee'=>'Rejetée']; $_pParts[] = $_sl[$filtreStatut] ?? $filtreStatut; }
+$_pFiltreStr = $_pParts ? implode(' · ', $_pParts) : 'Aucun filtre';
+?>
+<div class="print-only mb-3">
+  <div class="text-center">
+    <div style="font-size:16pt;font-weight:700;letter-spacing:.3px">École Privée de Santé Ibn Rochd (EPSI)</div>
+    <div style="font-size:9pt;color:#555;margin-bottom:5px">Tahoua, Région de Tahoua – Niger</div>
+    <div style="font-size:13pt;font-weight:600;text-decoration:underline;margin-bottom:4px">Liste des Dépenses</div>
+    <div style="font-size:9pt">Filtre&nbsp;: <?= $_pFiltreStr ?> &nbsp;|&nbsp; Édité le <?= date('d/m/Y à H:i') ?></div>
+    <div style="font-size:9pt">Total approuvé&nbsp;: <strong><?= formatMontant($totalApprouve) ?></strong> &nbsp;|&nbsp; <?= count($depenses) ?> entrée(s)</div>
+  </div>
+  <hr style="border-top:2px solid #333;margin-top:8px;margin-bottom:0">
+</div>
 
 <!-- Tableau -->
 <div class="card">
@@ -426,10 +449,9 @@ include APP_ROOT . '/includes/header.php';
               </select>
             </div>
             <div class="col-12">
-              <label class="form-label">Justification <?= $role === 'comptable' ? '<span class="text-danger">*</span>' : '' ?></label>
+              <label class="form-label">Justification</label>
               <textarea name="justification" class="form-control" rows="2"
-                        placeholder="Raison de la dépense..."
-                        <?= $role === 'comptable' ? 'required' : '' ?>></textarea>
+                        placeholder="Raison de la dépense (optionnel)"></textarea>
             </div>
           </div>
         </div>
