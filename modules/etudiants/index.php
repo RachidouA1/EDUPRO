@@ -13,6 +13,7 @@ $filiereId = (int)($_GET['filiere_id']  ?? 0);
 $niveauId  = (int)($_GET['niveau_id']   ?? 0);
 $anneeId   = (int)($_GET['annee_id']    ?? 0);
 $statut    = sanitize($_GET['statut']   ?? '');
+$sexe      = sanitize($_GET['sexe']     ?? '');
 
 // Build query
 $where  = ['1=1'];
@@ -29,6 +30,7 @@ if ($filiereId) { $where[] = 'e.filiere_id = ?'; $params[] = $filiereId; }
 if ($niveauId)  { $where[] = 'e.niveau_id = ?';  $params[] = $niveauId; }
 if ($anneeId)   { $where[] = 'e.annee_id = ?';   $params[] = $anneeId; }
 if ($statut)    { $where[] = 'e.statut = ?';      $params[] = $statut; }
+if ($sexe)      { $where[] = 'e.sexe = ?';        $params[] = $sexe; }
 
 $whereStr = implode(' AND ', $where);
 $stmt = $db->prepare("
@@ -78,7 +80,7 @@ include APP_ROOT . '/includes/header.php';
 <div class="card mb-4">
   <div class="card-body py-3">
     <form method="GET" class="row g-2 align-items-end">
-      <div class="col-md-4">
+      <div class="col-md-3">
         <div class="search-bar">
           <i class="fas fa-search search-icon"></i>
           <input type="text" name="search" class="form-control" placeholder="Nom, prénom, matricule..." value="<?= h($search) ?>">
@@ -102,6 +104,13 @@ include APP_ROOT . '/includes/header.php';
           <?php endforeach; ?>
         </select>
       </div>
+      <div class="col-6 col-md-2">
+        <select name="sexe" class="form-select">
+          <option value="">Tous sexes</option>
+          <option value="M" <?= $sexe==='M' ? 'selected' : '' ?>>Masculin</option>
+          <option value="F" <?= $sexe==='F' ? 'selected' : '' ?>>Féminin</option>
+        </select>
+      </div>
       <div class="col-md-2">
         <select name="statut" class="form-select">
           <option value="">Tous statuts</option>
@@ -111,8 +120,8 @@ include APP_ROOT . '/includes/header.php';
           <option value="diplome"  <?= $statut==='diplome'  ? 'selected' : '' ?>>Diplômé</option>
         </select>
       </div>
-      <div class="col-md-2 d-flex gap-2">
-        <button type="submit" class="btn btn-primary flex-fill"><i class="fas fa-search"></i></button>
+      <div class="col-auto d-flex gap-2">
+        <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i></button>
         <a href="<?= APP_URL ?>/modules/etudiants/index.php" class="btn btn-light"><i class="fas fa-times"></i></a>
       </div>
     </form>
@@ -121,9 +130,15 @@ include APP_ROOT . '/includes/header.php';
 
 <!-- Table -->
 <div class="card">
-  <div class="card-header d-flex justify-content-between align-items-center">
+  <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
     <span><strong><?= number_format($total) ?></strong> étudiant(s) trouvé(s)</span>
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+      <?php
+        $totalM = count(array_filter($etudiants, fn($e) => $e['sexe'] === 'M'));
+        $totalF = count(array_filter($etudiants, fn($e) => $e['sexe'] === 'F'));
+      ?>
+      <span class="badge" style="background:#1565c0;font-size:.8rem"><i class="fas fa-mars me-1"></i><?= $totalM ?> Masculin</span>
+      <span class="badge" style="background:#ad1457;font-size:.8rem"><i class="fas fa-venus me-1"></i><?= $totalF ?> Féminin</span>
       <button onclick="window.print()" class="btn btn-sm btn-outline-secondary no-print">
         <i class="fas fa-print me-1"></i>Imprimer
       </button>

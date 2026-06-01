@@ -86,6 +86,17 @@ if ($showFilieres) {
     ")->fetchAll();
 }
 
+// ===== Stats par sexe (scolarite) =====
+if ($role === 'scolarite') {
+    $sexeRows = $db->query("SELECT sexe, COUNT(*) as nb FROM etudiants WHERE statut='actif' GROUP BY sexe")->fetchAll();
+    $stats['masculin'] = 0;
+    $stats['feminin']  = 0;
+    foreach ($sexeRows as $sx) {
+        if ($sx['sexe'] === 'M') $stats['masculin'] = (int)$sx['nb'];
+        else $stats['feminin'] = (int)$sx['nb'];
+    }
+}
+
 // ===== Derniers étudiants =====
 $showRecentEtudiants = in_array($role, ['admin', 'directeur', 'scolarite', 'enseignant', 'comptable']);
 if ($showRecentEtudiants) {
@@ -590,6 +601,54 @@ include APP_ROOT . '/includes/header.php';
       <div class="stat-body">
         <div class="stat-value"><?= number_format($stats['enseignants']) ?></div>
         <div class="stat-label">Enseignants</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Répartition par sexe -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="stat-card" style="background:linear-gradient(135deg,#0d47a1,#1565c0)">
+      <div class="stat-icon"><i class="fas fa-mars"></i></div>
+      <div class="stat-body">
+        <div class="stat-value"><?= number_format($stats['masculin'] ?? 0) ?></div>
+        <div class="stat-label">Masculin</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card" style="background:linear-gradient(135deg,#880e4f,#ad1457)">
+      <div class="stat-icon"><i class="fas fa-venus"></i></div>
+      <div class="stat-body">
+        <div class="stat-value"><?= number_format($stats['feminin'] ?? 0) ?></div>
+        <div class="stat-label">Féminin</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-md-6">
+    <div class="card h-100">
+      <div class="card-header py-2"><i class="fas fa-venus-mars me-2 text-primary"></i>Répartition H / F</div>
+      <div class="card-body d-flex flex-column justify-content-center py-2">
+        <?php
+          $totSexe = max(1, (int)$stats['etudiants']);
+          $pctM    = round(($stats['masculin'] ?? 0) / $totSexe * 100);
+          $pctF    = round(($stats['feminin']  ?? 0) / $totSexe * 100);
+        ?>
+        <div class="d-flex justify-content-between mb-1">
+          <small><i class="fas fa-mars me-1" style="color:#1565c0"></i>Masculin</small>
+          <strong><?= ($stats['masculin'] ?? 0) ?> <span class="text-muted fw-normal">(<?= $pctM ?>%)</span></strong>
+        </div>
+        <div class="progress mb-3" style="height:10px">
+          <div class="progress-bar" style="width:<?= $pctM ?>%;background:#1565c0"></div>
+        </div>
+        <div class="d-flex justify-content-between mb-1">
+          <small><i class="fas fa-venus me-1" style="color:#ad1457"></i>Féminin</small>
+          <strong><?= ($stats['feminin'] ?? 0) ?> <span class="text-muted fw-normal">(<?= $pctF ?>%)</span></strong>
+        </div>
+        <div class="progress" style="height:10px">
+          <div class="progress-bar" style="width:<?= $pctF ?>%;background:#ad1457"></div>
+        </div>
       </div>
     </div>
   </div>
