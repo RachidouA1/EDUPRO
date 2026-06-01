@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'frais
         if (!$etuId)                                      $errors[] = 'Veuillez sélectionner un apprenant.';
         if (!array_key_exists($typeFrais, $libellesMap))  $errors[] = 'Sélectionnez un type de frais.';
         if ($montant <= 0)                                $errors[] = 'Le montant dû doit être supérieur à 0.';
-        if ($verse < 0 || $verse > $montant)              $errors[] = 'Montant versé invalide.';
+        if ($verse < 0)                                    $errors[] = 'Montant versé invalide.';
 
         if (empty($errors)) {
             $libelle = $libellesMap[$typeFrais];
@@ -437,14 +437,14 @@ $_pFiltreStr = $_pParts ? implode(' · ', $_pParts) : 'Aucun filtre';
             <div class="col-6">
               <label class="form-label fw-bold">Montant dû <span class="text-danger">*</span></label>
               <div class="input-group">
-                <input type="number" name="montant" id="fraisMontantDu" class="form-control" min="0" step="500" required placeholder="0">
+                <input type="number" name="montant" id="fraisMontantDu" class="form-control" min="0" required placeholder="0">
                 <span class="input-group-text text-muted" style="font-size:.8rem">FCFA</span>
               </div>
             </div>
             <div class="col-6">
               <label class="form-label fw-bold">Montant versé <span class="text-danger">*</span></label>
               <div class="input-group">
-                <input type="number" name="montant_paye" id="fraisMontantVerse" class="form-control" min="0" step="500" placeholder="0" value="0">
+                <input type="number" name="montant_paye" id="fraisMontantVerse" class="form-control" min="0" placeholder="0" value="0">
                 <span class="input-group-text text-muted" style="font-size:.8rem">FCFA</span>
               </div>
             </div>

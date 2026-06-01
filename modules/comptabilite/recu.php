@@ -61,90 +61,106 @@ if ($printId) {
     ];
     $sm = $statusMap[$pay['statut']] ?? $statusMap['en_attente'];
     $autoPrint = isset($_GET['auto_print']);
+    $recuSidebarColor = getParam('theme_couleur_sidebar', '#0f2d5c');
+    $recuLogo         = getLogoUrl();
+    $recuNom          = getParam('etablissement_nom', 'EPSI');
+    $recuSlogan       = getParam('etablissement_slogan', 'École Privée de Santé Ibn Rochd');
 ?>
 <!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Reçu <?= h($pay['numero_recu']) ?></title>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" rel="stylesheet">
 <style>
-*{box-sizing:border-box}
-body{font-family:Arial,sans-serif;margin:0;padding:1.5rem;background:#f4f6f8;color:#333}
-.wrap{max-width:680px;margin:0 auto}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;background:#e8edf2;padding:1.2rem;color:#222}
+.wrap{max-width:720px;margin:0 auto}
 
-/* Controls (no-print) */
-.controls{text-align:center;margin-bottom:1.25rem}
-.btn{display:inline-block;padding:.55rem 1.5rem;border-radius:6px;font-size:.9rem;font-weight:600;text-decoration:none;border:none;cursor:pointer;margin:0 .25rem}
-.btn-primary{background:#1a73e8;color:#fff}
-.btn-secondary{background:#6c757d;color:#fff}
-.btn:hover{opacity:.88}
-.btn-warning{background:#f57c00;color:#fff}
+/* ── Boutons écran ── */
+.controls{text-align:center;margin-bottom:1rem;display:flex;flex-wrap:wrap;gap:.4rem;justify-content:center}
+.btn{display:inline-flex;align-items:center;gap:.35rem;padding:.45rem 1.1rem;border-radius:6px;font-size:.83rem;font-weight:600;text-decoration:none;border:none;cursor:pointer}
+.btn-primary{background:#1a73e8;color:#fff}.btn-primary:hover{background:#1558c0}
+.btn-secondary{background:#6c757d;color:#fff}.btn-secondary:hover{background:#5a6268}
+.btn-warning{background:#f57c00;color:#fff}.btn-warning:hover{background:#d56800}
+
+/* ── Modal versement complémentaire ── */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;align-items:center;justify-content:center;padding:1rem}
 .modal-overlay.open{display:flex}
-.modal-box{background:#fff;border-radius:12px;padding:1.5rem;width:100%;max-width:500px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.22)}
-.modal-box h4{margin:0 0 1rem;font-size:1rem;color:#0f2d5c;display:flex;align-items:center;gap:.4rem}
-.fgrp{margin-bottom:.85rem}
-.fgrp label{display:block;font-size:.8rem;color:#555;font-weight:700;margin-bottom:.3rem}
-.fctl{width:100%;padding:.45rem .7rem;border:1px solid #ddd;border-radius:6px;font-size:.88rem;box-sizing:border-box;font-family:Arial,sans-serif}
-.fctl:focus{outline:none;border-color:#1a73e8;box-shadow:0 0 0 2px rgba(26,115,232,.18)}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
-.mfooter{display:flex;gap:.75rem;justify-content:flex-end;margin-top:1.2rem;padding-top:1rem;border-top:1px solid #eee}
-.btn-cancel{background:transparent;color:#555;border:1px solid #ccc;padding:.5rem 1.1rem;border-radius:6px;cursor:pointer;font-size:.88rem;font-weight:600}
-.btn-save{background:#1a73e8;color:#fff;border:none;padding:.5rem 1.4rem;border-radius:6px;cursor:pointer;font-size:.88rem;font-weight:700}
-.btn-cancel:hover{background:#f5f5f5}
-.btn-save:hover{background:#1565c0}
-.reste-info{background:#fff8e1;border:1px solid #f9a825;border-radius:6px;padding:.5rem .85rem;margin-bottom:1rem;font-size:.82rem;color:#795548}
+.modal-box{background:#fff;border-radius:10px;padding:1.4rem;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.25)}
+.modal-box h4{font-size:.95rem;color:#0f2d5c;margin-bottom:.9rem;display:flex;align-items:center;gap:.4rem}
+.fgrp{margin-bottom:.75rem}
+.fgrp label{display:block;font-size:.75rem;font-weight:700;color:#555;margin-bottom:.25rem}
+.fctl{width:100%;padding:.4rem .65rem;border:1px solid #d0d5dd;border-radius:5px;font-size:.85rem;font-family:Arial,sans-serif}
+.fctl:focus{outline:none;border-color:#1a73e8;box-shadow:0 0 0 2px rgba(26,115,232,.15)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:.65rem}
+.mfooter{display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem;padding-top:.85rem;border-top:1px solid #eee}
+.btn-cancel{background:#fff;color:#555;border:1px solid #ccc;padding:.4rem 1rem;border-radius:5px;cursor:pointer;font-size:.83rem;font-weight:600}
+.btn-save{background:#1a73e8;color:#fff;border:none;padding:.4rem 1.1rem;border-radius:5px;cursor:pointer;font-size:.83rem;font-weight:700}
+.reste-info{background:#fff8e1;border:1px solid #f9a825;border-radius:5px;padding:.4rem .75rem;margin-bottom:.85rem;font-size:.78rem;color:#795548}
 
-/* Receipt card */
-.card{background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.1)}
+/* ══════════════════════════════
+   REÇU — format demi-A4
+   Cible imprimée : ~200mm × 130mm
+═══════════════════════════════ */
+.recu{background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.12)}
 
-/* Header */
-.rec-header{background:#0f2d5c;color:#fff;padding:1.25rem 1.5rem;display:flex;justify-content:space-between;align-items:flex-start}
-.rec-school strong{font-size:1.1rem;letter-spacing:.5px}
-.rec-school small{display:block;font-size:.75rem;opacity:.75;margin-top:.15rem}
-.rec-num{text-align:right}
-.rec-num .num-label{font-size:.65rem;text-transform:uppercase;letter-spacing:1px;opacity:.7}
-.rec-num .num-value{font-size:1.05rem;font-weight:700;font-family:monospace;letter-spacing:.5px}
-.rec-num .num-date{font-size:.75rem;opacity:.8;margin-top:.2rem}
+/* Bandeau supérieur */
+.r-head{color:#fff;padding:.55rem .9rem;display:flex;justify-content:space-between;align-items:center;gap:.75rem}
+.r-head-left{display:flex;align-items:center;gap:.6rem}
+.r-head-left img{width:38px;height:38px;object-fit:contain;background:#fff;border-radius:5px;padding:3px;flex-shrink:0}
+.r-school-name{font-size:.82rem;font-weight:700;letter-spacing:.2px;line-height:1.2}
+.r-school-sub{font-size:.6rem;opacity:.78;margin-top:.1rem}
+.r-num{text-align:right;flex-shrink:0}
+.r-num-label{font-size:.55rem;text-transform:uppercase;letter-spacing:1px;opacity:.7}
+.r-num-value{font-size:.88rem;font-weight:700;font-family:monospace;letter-spacing:.5px}
+.r-num-date{font-size:.62rem;opacity:.82;margin-top:.1rem}
 
-/* Title bar */
-.rec-title{background:#1a73e8;color:#fff;text-align:center;padding:.55rem;font-size:.95rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase}
+/* Bandeau titre */
+.r-title{background:#1a73e8;color:#fff;text-align:center;padding:.28rem;font-size:.7rem;font-weight:700;letter-spacing:2px;text-transform:uppercase}
 
-/* Body */
-.rec-body{padding:1.5rem}
-.section{margin-bottom:1.25rem;padding-bottom:1.25rem;border-bottom:1px dashed #e0e0e0}
-.section:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
-.section-title{font-size:.65rem;text-transform:uppercase;letter-spacing:1.5px;color:#888;font-weight:700;margin-bottom:.65rem}
-.info-row{display:flex;justify-content:space-between;align-items:baseline;padding:.22rem 0;font-size:.88rem}
-.info-row .lbl{color:#666}
-.info-row .val{font-weight:600;text-align:right}
+/* Corps */
+.r-body{padding:.6rem .9rem}
 
-/* Amount table */
-.amt-table{width:100%;border-collapse:collapse;font-size:.9rem}
-.amt-table td{padding:.35rem .5rem}
-.amt-table .row-due{color:#555}
-.amt-table .row-paid td{color:#2e7d32;font-weight:700}
-.amt-table .row-rest td{color:#c62828}
-.amt-table .row-status td:last-child{text-align:right}
-.amt-table .divider td{border-top:2px solid #1a73e8;padding-top:.5rem}
+/* Ligne séparatrice */
+.r-sep{border:none;border-top:1px dashed #d8dde5;margin:.45rem 0}
 
-.status-badge{display:inline-block;padding:.3rem 1rem;border-radius:50px;font-size:.78rem;font-weight:700;border:1px solid}
+/* Grille infos 2 colonnes */
+.r-grid{display:grid;grid-template-columns:1fr 1fr;gap:.18rem .5rem}
+.r-item{display:flex;align-items:baseline;gap:.3rem;font-size:.74rem;line-height:1.5}
+.r-item .lbl{color:#888;white-space:nowrap;min-width:0;flex-shrink:0}
+.r-item .val{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.r-item.full{grid-column:1/-1}
+
+/* Bloc montants */
+.r-amounts{background:#f8fafd;border:1px solid #e3eaf4;border-radius:5px;padding:.45rem .7rem;display:flex;align-items:center;gap:0;margin:.45rem 0}
+.r-amt-col{flex:1;text-align:center;padding:0 .3rem}
+.r-amt-col+.r-amt-col{border-left:1px solid #dde4ef}
+.r-amt-label{font-size:.58rem;text-transform:uppercase;letter-spacing:.8px;color:#888;font-weight:700}
+.r-amt-value{font-size:.92rem;font-weight:700;margin-top:.1rem}
+.amt-due{color:#1a3a6e}
+.amt-paid{color:#2e7d32}
+.amt-rest{color:#c62828}
+
+/* Badge statut */
+.r-status{display:inline-block;padding:.18rem .7rem;border-radius:50px;font-size:.65rem;font-weight:700;border:1px solid;margin:.3rem 0}
 
 /* Signatures */
-.sigs{display:flex;gap:2rem;margin-top:2rem;padding-top:1.5rem;border-top:1px solid #e5e5e5}
-.sig{flex:1;text-align:center}
-.sig-label{font-size:.73rem;color:#888;margin-bottom:2.5rem}
-.sig-line{border-bottom:1px solid #aaa;margin:0 1rem}
+.r-sigs{display:flex;gap:1rem;margin-top:.55rem;padding-top:.4rem;border-top:1px solid #e5e5e5}
+.r-sig{flex:1;text-align:center}
+.r-sig-label{font-size:.6rem;color:#888;margin-bottom:.7rem}
+.r-sig-line{border-bottom:1px solid #bbb;margin:0 .5rem}
 
-/* Footer */
-.rec-footer{background:#f8f9fa;border-top:1px solid #eee;padding:.6rem 1.5rem;text-align:center;font-size:.68rem;color:#aaa}
+/* Pied */
+.r-foot{background:#f5f7fa;border-top:1px solid #e8ecf0;padding:.28rem .9rem;text-align:center;font-size:.58rem;color:#aaa}
 
-@media print{
+/* ── Impression ── */
+@media print {
   body{background:#fff;padding:0}
-  .controls{display:none!important}
-  .card{box-shadow:none;border:1px solid #ccc}
+  .controls,.modal-overlay{display:none!important}
+  .recu{box-shadow:none;border-radius:0}
+  @page{size:A4 portrait;margin:1cm}
 }
 </style>
 </head>
@@ -152,116 +168,133 @@ body{font-family:Arial,sans-serif;margin:0;padding:1.5rem;background:#f4f6f8;col
 <div class="wrap">
 
   <div class="controls">
-    <button class="btn btn-primary" onclick="window.print()"><i class="fas fa-print"></i> &nbsp;Imprimer</button>
-    <a href="<?= APP_URL ?>/modules/comptabilite/recu.php" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> &nbsp;Retour</a>
-    <a href="<?= APP_URL ?>/modules/etudiants/paiements.php?id=<?= $pay['etudiant_id'] ?>" class="btn btn-secondary"><i class="fas fa-receipt"></i> &nbsp;Tous les paiements</a>
+    <button class="btn btn-primary" onclick="window.print()"><i class="fas fa-print"></i> Imprimer</button>
+    <a href="<?= APP_URL ?>/modules/comptabilite/recu.php" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Retour</a>
+    <a href="<?= APP_URL ?>/modules/etudiants/paiements.php?id=<?= $pay['etudiant_id'] ?>" class="btn btn-secondary"><i class="fas fa-receipt"></i> Tous les paiements</a>
     <?php if ($pay['statut'] !== 'complet' && hasRole(['admin', 'comptable'])): ?>
-    <button class="btn btn-warning" onclick="openVersement()"><i class="fas fa-plus"></i> &nbsp;Ajouter un versement</button>
+    <button class="btn btn-warning" onclick="openVersement()"><i class="fas fa-plus"></i> Ajouter un versement</button>
     <?php endif; ?>
   </div>
 
-  <div class="card">
-    <!-- Header -->
-    <?php
-    $recuSidebarColor = getParam('theme_couleur_sidebar',  '#0f2d5c');
-    $recuLogo         = getLogoUrl();
-    $recuNom          = getParam('etablissement_nom', 'EPSI');
-    $recuSlogan       = getParam('etablissement_slogan');
-    ?>
-    <div class="rec-header" style="background:<?= h($recuSidebarColor) ?>">
-      <div class="rec-school" style="display:flex;align-items:center;gap:12px">
+  <div class="recu">
+
+    <!-- ── En-tête ── -->
+    <div class="r-head" style="background:<?= h($recuSidebarColor) ?>">
+      <div class="r-head-left">
         <?php if ($recuLogo): ?>
-          <img src="<?= h($recuLogo) ?>" alt="Logo"
-               style="width:50px;height:50px;object-fit:contain;border-radius:8px;background:#fff;padding:4px;flex-shrink:0">
+          <img src="<?= h($recuLogo) ?>" alt="Logo">
         <?php endif; ?>
         <div>
-          <strong><?= h($recuNom) ?></strong>
-          <?php if ($recuSlogan): ?>
-            <small style="display:block;font-size:.72rem;opacity:.75;margin-top:.1rem"><?= h($recuSlogan) ?></small>
-          <?php else: ?>
-            <small>École Privée de Santé Ibn Rochd</small>
-          <?php endif; ?>
+          <div class="r-school-name"><?= h($recuNom) ?></div>
+          <div class="r-school-sub"><?= h($recuSlogan) ?> &bull; Tahoua – Niger</div>
         </div>
       </div>
-      <div class="rec-num">
-        <div class="num-label">Reçu N°</div>
-        <div class="num-value"><?= h($pay['numero_recu']) ?></div>
-        <div class="num-date"><?= date('d/m/Y', strtotime($pay['date_paiement'])) ?></div>
+      <div class="r-num">
+        <div class="r-num-label">Reçu N°</div>
+        <div class="r-num-value"><?= h($pay['numero_recu']) ?></div>
+        <div class="r-num-date"><?= date('d/m/Y', strtotime($pay['date_paiement'])) ?></div>
       </div>
     </div>
 
-    <!-- Title bar -->
-    <div class="rec-title">Reçu de Paiement</div>
+    <!-- ── Titre ── -->
+    <div class="r-title">Reçu de Paiement</div>
 
-    <!-- Body -->
-    <div class="rec-body">
+    <!-- ── Corps ── -->
+    <div class="r-body">
 
-      <!-- Student info -->
-      <div class="section">
-        <div class="section-title">Informations de l'étudiant</div>
-        <div class="info-row"><span class="lbl">Nom & Prénom</span><span class="val"><?= h($pay['etu_prenom'].' '.$pay['etu_nom']) ?></span></div>
-        <div class="info-row"><span class="lbl">Matricule</span><span class="val" style="font-family:monospace"><?= h($pay['matricule']) ?></span></div>
+      <!-- Infos étudiant + versement -->
+      <div class="r-grid">
+        <div class="r-item full">
+          <span class="lbl">Apprenant&nbsp;:</span>
+          <span class="val"><?= h(strtoupper($pay['etu_nom']).' '.$pay['etu_prenom']) ?>
+            &ensp;<span style="font-family:monospace;font-weight:400;color:#555;font-size:.7rem"><?= h($pay['matricule']) ?></span>
+          </span>
+        </div>
         <?php if ($pay['filiere_nom']): ?>
-        <div class="info-row"><span class="lbl">Filière</span><span class="val"><?= h($pay['filiere_code'].' – '.$pay['filiere_nom']) ?></span></div>
+        <div class="r-item">
+          <span class="lbl">Filière&nbsp;:</span>
+          <span class="val"><?= h($pay['filiere_code'].' – '.$pay['filiere_nom']) ?></span>
+        </div>
         <?php endif; ?>
         <?php if ($pay['niveau_nom']): ?>
-        <div class="info-row"><span class="lbl">Niveau</span><span class="val"><?= h($pay['niveau_nom']) ?></span></div>
+        <div class="r-item">
+          <span class="lbl">Niveau&nbsp;:</span>
+          <span class="val"><?= h($pay['niveau_nom']) ?></span>
+        </div>
         <?php endif; ?>
         <?php if ($pay['annee_libelle']): ?>
-        <div class="info-row"><span class="lbl">Année académique</span><span class="val"><?= h($pay['annee_libelle']) ?></span></div>
+        <div class="r-item">
+          <span class="lbl">Année&nbsp;:</span>
+          <span class="val"><?= h($pay['annee_libelle']) ?></span>
+        </div>
         <?php endif; ?>
-      </div>
-
-      <!-- Payment details -->
-      <div class="section">
-        <div class="section-title">Détails du versement</div>
-        <div class="info-row"><span class="lbl">Libellé</span><span class="val"><?= h($pay['libelle']) ?></span></div>
-        <div class="info-row"><span class="lbl">Mode de paiement</span><span class="val"><?= ucfirst(str_replace('_', ' ', h($pay['mode_paiement']))) ?></span></div>
+        <div class="r-item full">
+          <span class="lbl">Libellé&nbsp;:</span>
+          <span class="val"><?= h($pay['libelle']) ?></span>
+        </div>
+        <div class="r-item">
+          <span class="lbl">Mode&nbsp;:</span>
+          <span class="val"><?= ucfirst(str_replace('_',' ',h($pay['mode_paiement']))) ?></span>
+        </div>
         <?php if (!empty($pay['reference'])): ?>
-        <div class="info-row"><span class="lbl">Référence</span><span class="val"><?= h($pay['reference']) ?></span></div>
+        <div class="r-item">
+          <span class="lbl">Réf.&nbsp;:</span>
+          <span class="val"><?= h($pay['reference']) ?></span>
+        </div>
         <?php endif; ?>
       </div>
 
-      <!-- Amounts -->
-      <div class="section">
-        <div class="section-title">Montants</div>
-        <table class="amt-table">
-          <tr class="row-due"><td>Montant total dû</td><td style="text-align:right"><?= formatMontant($pay['montant']) ?></td></tr>
-          <tr class="row-paid divider"><td><i class="fas fa-check-circle" style="font-size:.8rem"></i> Montant versé</td><td style="text-align:right"><?= formatMontant($pay['montant_paye']) ?></td></tr>
-          <?php if ($reste > 0): ?>
-          <tr class="row-rest"><td><i class="fas fa-clock" style="font-size:.8rem"></i> Reste à payer</td><td style="text-align:right"><?= formatMontant($reste) ?></td></tr>
-          <?php endif; ?>
-          <tr><td colspan="2" style="padding-top:.75rem">
-            <span class="status-badge" style="color:<?= $sm['color'] ?>;background:<?= $sm['bg'] ?>;border-color:<?= $sm['border'] ?>">
-              <?= $sm['lbl'] ?>
-            </span>
-          </td></tr>
-        </table>
+      <hr class="r-sep">
+
+      <!-- Bloc montants -->
+      <div class="r-amounts">
+        <div class="r-amt-col">
+          <div class="r-amt-label">Montant dû</div>
+          <div class="r-amt-value amt-due"><?= formatMontant($pay['montant']) ?></div>
+        </div>
+        <div class="r-amt-col">
+          <div class="r-amt-label">&#10003; Versé</div>
+          <div class="r-amt-value amt-paid"><?= formatMontant($pay['montant_paye']) ?></div>
+        </div>
+        <?php if ($reste > 0): ?>
+        <div class="r-amt-col">
+          <div class="r-amt-label">Reste à payer</div>
+          <div class="r-amt-value amt-rest"><?= formatMontant($reste) ?></div>
+        </div>
+        <?php endif; ?>
+      </div>
+
+      <!-- Statut -->
+      <div style="text-align:center">
+        <span class="r-status" style="color:<?= $sm['color'] ?>;background:<?= $sm['bg'] ?>;border-color:<?= $sm['border'] ?>">
+          <?= $sm['lbl'] ?>
+        </span>
       </div>
 
       <!-- Signatures -->
-      <div class="sigs">
-        <div class="sig">
-          <div class="sig-label">Signature du caissier / responsable</div>
-          <div class="sig-line"></div>
+      <div class="r-sigs">
+        <div class="r-sig">
+          <div class="r-sig-label">Signature du caissier / responsable</div>
+          <div class="r-sig-line"></div>
         </div>
-        <div class="sig">
-          <div class="sig-label">Cachet et signature de la Direction</div>
-          <div class="sig-line"></div>
+        <div class="r-sig">
+          <div class="r-sig-label">Cachet et signature de la Direction</div>
+          <div class="r-sig-line"></div>
         </div>
       </div>
 
-    </div><!-- /rec-body -->
+    </div><!-- /r-body -->
 
-    <div class="rec-footer">
-      EPSI – École Privée de Santé Ibn Rochd &nbsp;&bull;&nbsp;
+    <div class="r-foot">
+      EPSI &ndash; École Privée de Santé Ibn Rochd &nbsp;&bull;&nbsp;
       Ce document tient lieu de reçu officiel &nbsp;&bull;&nbsp;
       Émis le <?= date('d/m/Y à H:i') ?>
     </div>
-  </div>
 
-</div>
+  </div><!-- /recu -->
+</div><!-- /wrap -->
 
+<!-- ── Modal : versement complémentaire ── -->
 <?php if ($pay['statut'] !== 'complet' && hasRole(['admin', 'comptable'])): ?>
 <div id="versementOverlay" class="modal-overlay" onclick="if(event.target===this)closeVersement()">
   <div class="modal-box">
@@ -271,10 +304,10 @@ body{font-family:Arial,sans-serif;margin:0;padding:1.5rem;background:#f4f6f8;col
       Solde restant à régler : <strong><?= formatMontant($reste) ?></strong>
     </div>
     <form method="POST" action="<?= APP_URL ?>/modules/comptabilite/recu.php">
-      <input type="hidden" name="csrf" value="<?= h(generateCsrfToken()) ?>">
-      <input type="hidden" name="action" value="add_versement">
+      <input type="hidden" name="csrf"       value="<?= h(generateCsrfToken()) ?>">
+      <input type="hidden" name="action"     value="add_versement">
       <input type="hidden" name="etudiant_id" value="<?= $pay['etudiant_id'] ?>">
-      <input type="hidden" name="annee_id" value="<?= h($pay['annee_id'] ?? '') ?>">
+      <input type="hidden" name="annee_id"   value="<?= h($pay['annee_id'] ?? '') ?>">
       <div class="fgrp">
         <label>Libellé</label>
         <input type="text" name="libelle" class="fctl" value="<?= h($pay['libelle']) ?>" required>
@@ -282,11 +315,11 @@ body{font-family:Arial,sans-serif;margin:0;padding:1.5rem;background:#f4f6f8;col
       <div class="grid2">
         <div class="fgrp">
           <label>Solde à régler (FCFA)</label>
-          <input type="number" name="montant" class="fctl" value="<?= $reste ?>" min="1" step="500" required>
+          <input type="number" name="montant" class="fctl" value="<?= $reste ?>" min="1" required>
         </div>
         <div class="fgrp">
-          <label>Montant versé (FCFA) *</label>
-          <input type="number" name="montant_paye" class="fctl" value="<?= $reste ?>" min="1" step="500" required>
+          <label>Montant versé (FCFA)</label>
+          <input type="number" name="montant_paye" class="fctl" value="<?= $reste ?>" min="1" required>
         </div>
         <div class="fgrp">
           <label>Date du versement</label>
@@ -316,12 +349,12 @@ body{font-family:Arial,sans-serif;margin:0;padding:1.5rem;background:#f4f6f8;col
 <?php endif; ?>
 
 <?php if ($autoPrint): ?>
-<script>window.addEventListener('load', () => setTimeout(() => window.print(), 400));</script>
+<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),400));</script>
 <?php endif; ?>
 <script>
-function openVersement()  { var o=document.getElementById('versementOverlay'); if(o) o.classList.add('open'); }
-function closeVersement() { var o=document.getElementById('versementOverlay'); if(o) o.classList.remove('open'); }
-document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeVersement(); });
+function openVersement()  { document.getElementById('versementOverlay').classList.add('open'); }
+function closeVersement() { document.getElementById('versementOverlay').classList.remove('open'); }
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeVersement(); });
 </script>
 </body>
 </html>
@@ -347,7 +380,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_v
         $ref     = sanitize($_POST['reference']     ?? '');
         $anneeId = (int)($_POST['annee_id']         ?? 0);
 
-        if ($etuId && !empty($libelle) && $montant > 0 && $verse > 0 && $verse <= $montant) {
+        if ($etuId && !empty($libelle) && $montant > 0 && $verse > 0) {
             $statut = ($verse >= $montant) ? 'complet' : 'partiel';
 
             $year  = date('Y', strtotime($date));
@@ -398,7 +431,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add')
         if (!$etuId)          $errors[] = 'Veuillez sélectionner un étudiant.';
         if (empty($libelle))  $errors[] = 'Le libellé est obligatoire.';
         if ($montant <= 0)    $errors[] = 'Le montant doit être supérieur à 0.';
-        if ($verse > $montant) $errors[] = 'Le montant versé ne peut pas dépasser le montant dû.';
 
         if (empty($errors)) {
             $statut = 'en_attente';
@@ -684,11 +716,11 @@ include APP_ROOT . '/includes/header.php';
           <div class="row g-3">
             <div class="col-6">
               <label class="form-label fw-600">Montant dû <span class="text-danger">*</span></label>
-              <input type="number" name="montant" id="montantDu" class="form-control" min="0" step="500" required placeholder="0">
+              <input type="number" name="montant" id="montantDu" class="form-control" min="0" required placeholder="0">
             </div>
             <div class="col-6">
               <label class="form-label fw-600">Montant versé</label>
-              <input type="number" name="montant_paye" id="montantVerse" class="form-control" min="0" step="500" value="0" placeholder="0">
+              <input type="number" name="montant_paye" id="montantVerse" class="form-control" min="0" value="0" placeholder="0">
             </div>
             <div class="col-6">
               <label class="form-label fw-600">Date du versement</label>
