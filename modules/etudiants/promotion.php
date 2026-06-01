@@ -49,12 +49,165 @@ function validationSimple(PDO $db, int $eid, int $annee_id, int $niveau_id): arr
     ];
 }
 
-// ─── Calcul validation : filières avec UE (INF, SF) ──────────────────────────
-function validationUE(PDO $db, int $eid, int $annee_id, int $filiere_id, int $niveau_ordre): array
+// ─── Vérifie si toutes les UE d'un semestre donné sont validées ──────────────
+// Si annee_id=0 : cherche dans toutes les années (pour vérification historique)
+function isSemestreValide(PDO $db, int $eid, int $filiere_id, int $semestre_num, int $annee_id = 0): array
+{
+    $stmt = $db->prepare("SELECT id, coefficient FROM ue WHERE filiere_id=? AND semestre_num=? AND actif=1 ORDER BY id");
+    $stmt->execute([$filiere_id, $semestre_num]);
+    $ues = $stmt->fetchAll();
+
+    if (empty($ues)) return ['valid' => false, 'ue_val' => 0, 'ue_total' => 0, 'has_notes' => false];
+
+    $ue_total = 0; $ue_val = 0; $has_notes = false;
+
+    foreach ($ues as $ue) {
+        $ue_total++;
+        $stmt2 = $db->prepare("SELECT id, coefficient FROM matieres WHERE ue_id=? AND actif=1");
+        $stmt2->execute([$ue['id']]);
+        $mats = $stmt2->fetchAll();
+
+        $pts_ue = 0; $coef_ue = 0;
+        foreach ($mats as $mat) {
+            if ($annee_id > 0) {
+                $stmt3 = $db->prepare("SELECT note_finale FROM notes WHERE etudiant_id=? AND matiere_id=? AND annee_id=? AND session=2 LIMIT 1");
+                $stmt3->execute([$eid, $mat['id'], $annee_id]);
+                $note = $stmt3->fetchColumn();
+                if ($note === false) {
+                    $stmt3 = $db->prepare("SELECT note_finale FROM notes WHERE etudiant_id=? AND matiere_id=? AND annee_id=? AND session=1 LIMIT 1");
+                    $stmt3->execute([$eid, $mat['id'], $annee_id]);
+                    $note = $stmt3->fetchColumn();
+                }
+            } else {
+                // Historique : meilleure note toutes années confondues
+                $stmt3 = $db->prepare("SELECT note_finale FROM notes WHERE etudiant_id=? AND matiere_id=? AND session=2 ORDER BY annee_id DESC LIMIT 1");
+                $stmt3->execute([$eid, $mat['id']]);
+                $note = $stmt3->fetchColumn();
+                if ($note === false) {
+                    $stmt3 = $db->prepare("SELECT note_finale FROM notes WHERE etudiant_id=? AND matiere_id=? AND session=1 ORDER BY annee_id DESC LIMIT 1");
+                    $stmt3->execute([$eid, $mat['id']]);
+                    $note = $stmt3->fetchColumn();
+                }
+            }
+            if ($note !== false && $note !== null) {
+                $pts_ue  += (float)$note * (float)$mat['coefficient'];
+                $coef_ue += (float)$mat['coefficient'];
+                $has_notes = true;
+            }
+        }
+
+        $moy_ue = $coef_ue > 0 ? $pts_ue / $coef_ue : 0;
+        if ($moy_ue >= 10) $ue_val++;
+    }
+
+    return [
+        'valid'     => $ue_val === $ue_total,
+        'ue_val'    => $ue_val,
+        'ue_total'  => $ue_total,
+        'has_notes' => $has_notes,
+    ];
+}
+
+// ─── Calcul validation : filières avec UE ────────────────────────────────────
+// Règles niveau supérieur :
+//   ordre=1 (1ère → 2ème) : autorisé si ≥ 1 semestre entièrement validé
+//   ordre=2 (2ème → 3ème) : refusé si un semestre de 1ère année non validé
+//   autres ordres           : tous les UE de l'année doivent être validés
+function validationUE(PDO $db, int $eid, int $annee_id, int $filiere_id, int $niveau_ordre, bool $is_niv_sup = false): array
 {
     $sem_a = $niveau_ordre * 2 - 1;
     $sem_b = $niveau_ordre * 2;
 
+    // ── Règle spéciale niveau supérieur, 1ère année ───────────────────────────
+    if ($is_niv_sup && $niveau_ordre === 1) {
+        $s1 = isSemestreValide($db, $eid, $filiere_id, $sem_a, $annee_id);
+        $s2 = isSemestreValide($db, $eid, $filiere_id, $sem_b, $annee_id);
+
+        $has_notes = $s1['has_notes'] || $s2['has_notes'];
+        $ue_val    = $s1['ue_val']    + $s2['ue_val'];
+        $ue_total  = $s1['ue_total']  + $s2['ue_total'];
+        $validated = $s1['valid'] || $s2['valid']; // au moins 1 semestre validé
+
+        if (!$has_notes) {
+            $label = 'Notes non saisies';
+        } elseif ($validated) {
+            $sem_ok = $s1['valid'] ? "S{$sem_a}" : "S{$sem_b}";
+            $label  = "Admis(e) — {$sem_ok} validé";
+        } else {
+            $label = "Refusé(e) — {$ue_val}/{$ue_total} UE (aucun semestre complet)";
+        }
+
+        return [
+            'moyenne'     => null,
+            'validated'   => $validated,
+            'has_notes'   => $has_notes,
+            'ue_val'      => $ue_val,
+            'ue_total'    => $ue_total,
+            'label'       => $label,
+            'type'        => 'ue_niv1',
+            'sem_a_valid' => $s1['valid'],
+            'sem_b_valid' => $s2['valid'],
+            'sem_a_num'   => $sem_a,
+            'sem_b_num'   => $sem_b,
+            'sem_a_ue'    => "{$s1['ue_val']}/{$s1['ue_total']}",
+            'sem_b_ue'    => "{$s2['ue_val']}/{$s2['ue_total']}",
+        ];
+    }
+
+    // ── Règle spéciale niveau supérieur, 2ème année ───────────────────────────
+    if ($is_niv_sup && $niveau_ordre === 2) {
+        // Valider les semestres de l'année en cours (S3, S4)
+        $s3 = isSemestreValide($db, $eid, $filiere_id, $sem_a, $annee_id);
+        $s4 = isSemestreValide($db, $eid, $filiere_id, $sem_b, $annee_id);
+        $year2_valid     = $s3['valid'] && $s4['valid'];
+        $year2_has_notes = $s3['has_notes'] || $s4['has_notes'];
+        $ue_val_y2       = $s3['ue_val'] + $s4['ue_val'];
+        $ue_total_y2     = $s3['ue_total'] + $s4['ue_total'];
+
+        // Vérifier les semestres de 1ère année (toutes années confondues)
+        $s1 = isSemestreValide($db, $eid, $filiere_id, 1, 0);
+        $s2 = isSemestreValide($db, $eid, $filiere_id, 2, 0);
+        $year1_valid = $s1['valid'] && $s2['valid'];
+
+        $validated = $year2_valid && $year1_valid;
+
+        $blocages = [];
+        if (!$s1['valid']) $blocages[] = 'S1';
+        if (!$s2['valid']) $blocages[] = 'S2';
+
+        if (!$year2_has_notes) {
+            $label = 'Notes non saisies (Année 2)';
+        } elseif ($validated) {
+            $label = "Admis(e) — {$ue_val_y2}/{$ue_total_y2} UE + 1ère année validée";
+        } elseif (!$year2_valid) {
+            $label = "Refusé(e) — Année 2 incomplète ({$ue_val_y2}/{$ue_total_y2} UE)";
+        } else {
+            $label = "Bloqué(e) — " . implode(' + ', $blocages) . " non validé(s) en 1ère année";
+        }
+
+        return [
+            'moyenne'        => null,
+            'validated'      => $validated,
+            'has_notes'      => $year2_has_notes,
+            'ue_val'         => $ue_val_y2,
+            'ue_total'       => $ue_total_y2,
+            'label'          => $label,
+            'type'           => 'ue_niv2',
+            'year2_valid'    => $year2_valid,
+            'year1_valid'    => $year1_valid,
+            'sem1_valid'     => $s1['valid'],
+            'sem2_valid'     => $s2['valid'],
+            'sem3_valid'     => $s3['valid'],
+            'sem4_valid'     => $s4['valid'],
+            'sem1_ue'        => "{$s1['ue_val']}/{$s1['ue_total']}",
+            'sem2_ue'        => "{$s2['ue_val']}/{$s2['ue_total']}",
+            'sem3_ue'        => "{$s3['ue_val']}/{$s3['ue_total']}",
+            'sem4_ue'        => "{$s4['ue_val']}/{$s4['ue_total']}",
+            'blocked_year1'  => !$year1_valid,
+        ];
+    }
+
+    // ── Règle générale (autres niveaux ou filières non niv_sup) ──────────────
     $ue_total = 0; $ue_val = 0;
     $pts_gen  = 0; $coef_gen = 0;
     $has_notes = false;
@@ -72,7 +225,6 @@ function validationUE(PDO $db, int $eid, int $annee_id, int $filiere_id, int $ni
 
             $pts_ue = 0; $coef_ue = 0;
             foreach ($mats as $mat) {
-                // Session 2 prioritaire, sinon session 1
                 $stmt3 = $db->prepare("SELECT note_finale FROM notes WHERE etudiant_id=? AND matiere_id=? AND annee_id=? AND session=2 LIMIT 1");
                 $stmt3->execute([$eid, $mat['id'], $annee_id]);
                 $note = $stmt3->fetchColumn();
@@ -197,7 +349,8 @@ if ($filiere_id && $niveau_id && $annee_id) {
 
     $stmt = $db->prepare("SELECT COUNT(*) FROM ue WHERE filiere_id=? AND actif=1");
     $stmt->execute([$filiere_id]);
-    $has_ue = (int)$stmt->fetchColumn() > 0;
+    $has_ue    = (int)$stmt->fetchColumn() > 0;
+    $is_niv_sup = !empty($filiere_info['niveau_superieur']);
 
     $stmt = $db->prepare("SELECT * FROM niveaux WHERE filiere_id=? AND ordre=? LIMIT 1");
     $stmt->execute([$filiere_id, ($niveau_info['ordre'] ?? 0) + 1]);
@@ -214,7 +367,7 @@ if ($filiere_id && $niveau_id && $annee_id) {
 
     foreach ($etudiants_raw as $etu) {
         $val = $has_ue
-            ? validationUE($db, $etu['id'], $annee_id, $filiere_id, (int)$niveau_info['ordre'])
+            ? validationUE($db, $etu['id'], $annee_id, $filiere_id, (int)$niveau_info['ordre'], $is_niv_sup)
             : validationSimple($db, $etu['id'], $annee_id, $niveau_id);
         $resultats[] = array_merge($etu, $val);
     }
@@ -351,8 +504,20 @@ include APP_ROOT . '/includes/header.php';
   <?php else: ?>
     <span class="badge bg-primary">Dernière année → Diplômé</span>
   <?php endif; ?>
-  <span class="badge <?= $has_ue ? 'bg-purple' : 'bg-secondary' ?>" style="<?= $has_ue ? 'background:#6f42c1!important' : '' ?>">
-    <?= $has_ue ? 'Système UE (niveaux supérieurs)' : 'Système simple (moyenne ≥ 10)' ?>
+  <span class="badge" style="background:<?= $has_ue ? '#6f42c1' : '#6c757d' ?>">
+    <?php if ($has_ue && $is_niv_sup): ?>
+      <?php if ((int)$niveau_info['ordre'] === 1): ?>
+        Niv. Sup. — Admission si ≥ 1 semestre validé
+      <?php elseif ((int)$niveau_info['ordre'] === 2): ?>
+        Niv. Sup. — Bloqué si semestre de 1ère année non validé
+      <?php else: ?>
+        Niv. Sup. — Tous les UE requis
+      <?php endif; ?>
+    <?php elseif ($has_ue): ?>
+      Système UE (tous les UE requis)
+    <?php else: ?>
+      Système simple (moyenne ≥ 10)
+    <?php endif; ?>
   </span>
 </div>
 
@@ -443,19 +608,49 @@ include APP_ROOT . '/includes/header.php';
               <?php endif; ?>
             </td>
             <?php if ($has_ue): ?>
-            <td class="text-center">
-              <span class="badge <?= $r['validated'] ? 'bg-success' : 'bg-danger' ?>">
-                <?= $r['ue_val'] ?? 0 ?>/<?= $r['ue_total'] ?? 0 ?>
-              </span>
+            <td style="font-size:.8rem">
+              <?php if (($r['type'] ?? '') === 'ue_niv1'): ?>
+                <div class="d-flex gap-1 flex-wrap">
+                  <span class="badge <?= $r['sem_a_valid'] ? 'bg-success' : ($r['has_notes'] ? 'bg-danger' : 'bg-secondary') ?>">
+                    S<?= $r['sem_a_num'] ?>: <?= $r['sem_a_ue'] ?> UE
+                  </span>
+                  <span class="badge <?= $r['sem_b_valid'] ? 'bg-success' : ($r['has_notes'] ? 'bg-danger' : 'bg-secondary') ?>">
+                    S<?= $r['sem_b_num'] ?>: <?= $r['sem_b_ue'] ?> UE
+                  </span>
+                </div>
+              <?php elseif (($r['type'] ?? '') === 'ue_niv2'): ?>
+                <div class="d-flex gap-1 flex-wrap flex-column" style="font-size:.75rem">
+                  <div>
+                    <span class="badge <?= $r['sem3_valid'] ? 'bg-success' : 'bg-danger' ?>">S3: <?= $r['sem3_ue'] ?></span>
+                    <span class="badge <?= $r['sem4_valid'] ? 'bg-success' : 'bg-danger' ?>">S4: <?= $r['sem4_ue'] ?></span>
+                  </div>
+                  <div>
+                    <span class="badge <?= $r['sem1_valid'] ? 'bg-success' : 'bg-warning text-dark' ?>">
+                      <i class="fas fa-history" style="font-size:.6rem"></i> S1: <?= $r['sem1_ue'] ?>
+                    </span>
+                    <span class="badge <?= $r['sem2_valid'] ? 'bg-success' : 'bg-warning text-dark' ?>">
+                      <i class="fas fa-history" style="font-size:.6rem"></i> S2: <?= $r['sem2_ue'] ?>
+                    </span>
+                  </div>
+                </div>
+              <?php else: ?>
+                <span class="badge <?= $r['validated'] ? 'bg-success' : 'bg-danger' ?>">
+                  <?= $r['ue_val'] ?? 0 ?>/<?= $r['ue_total'] ?? 0 ?> UE
+                </span>
+              <?php endif; ?>
             </td>
             <?php endif; ?>
             <td>
               <?php if ($r['validated']): ?>
                 <span class="badge bg-success"><i class="fas fa-check me-1"></i><?= h($r['label']) ?></span>
+              <?php elseif (!empty($r['blocked_year1'])): ?>
+                <span class="badge bg-warning text-dark">
+                  <i class="fas fa-lock me-1"></i><?= h($r['label']) ?>
+                </span>
               <?php elseif ($r['has_notes']): ?>
                 <span class="badge bg-danger"><i class="fas fa-times me-1"></i><?= h($r['label']) ?></span>
               <?php else: ?>
-                <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i><?= h($r['label']) ?></span>
+                <span class="badge bg-secondary"><i class="fas fa-clock me-1"></i><?= h($r['label']) ?></span>
               <?php endif; ?>
             </td>
             <td class="text-center">

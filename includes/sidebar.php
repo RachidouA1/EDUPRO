@@ -118,7 +118,7 @@ HTML;
         ['/pedagogique/', '/emploi_du_temps/'],
         '<a href="' . APP_URL . '/modules/pedagogique/matieres.php" class="nav-link' . isActive('/pedagogique/matieres') . '"><i class="fas fa-book-open"></i> Matières / Modules</a>'
       . '<a href="' . APP_URL . '/modules/pedagogique/ue.php" class="nav-link' . isActive('/pedagogique/ue') . '"><i class="fas fa-layer-group"></i> Unités d\'Ens. (UE)</a>'
-      . '<a href="' . APP_URL . '/modules/pedagogique/notes.php" class="nav-link' . isActive('/pedagogique/notes') . '"><i class="fas fa-edit"></i> Saisie des notes</a>'
+      . '<a href="' . APP_URL . '/modules/pedagogique/notes.php" class="nav-link' . isActive('/pedagogique/notes') . '"><i class="fas fa-eye"></i> Notes</a>'
       . '<a href="' . APP_URL . '/modules/pedagogique/bulletins.php" class="nav-link' . isActive('/pedagogique/bulletins') . '"><i class="fas fa-file-alt"></i> Bulletins de notes</a>'
       . '<a href="' . APP_URL . '/modules/pedagogique/pv.php" class="nav-link' . isActive('/pedagogique/pv') . '"><i class="fas fa-file-contract"></i> PV Supérieur</a>'
       . '<a href="' . APP_URL . '/modules/emploi_du_temps/index.php" class="nav-link' . isActive('/emploi_du_temps/') . '"><i class="fas fa-calendar-week"></i> Emplois du temps</a>'
@@ -199,7 +199,7 @@ HTML;
     <?= sidebarGroup('ens-pedagogie', 'Pédagogie', 'fa-book-open',
         ['/pedagogique/'],
         '<a href="' . APP_URL . '/modules/pedagogique/matieres.php" class="nav-link' . isActive('/pedagogique/matieres') . '"><i class="fas fa-book-open"></i> Mes Matières</a>'
-      . '<a href="' . APP_URL . '/modules/pedagogique/notes.php" class="nav-link' . isActive('/pedagogique/notes') . '"><i class="fas fa-edit"></i> Saisie des notes</a>'
+      . '<a href="' . APP_URL . '/modules/pedagogique/notes.php" class="nav-link' . isActive('/pedagogique/notes') . '"><i class="fas fa-eye"></i> Notes</a>'
       . '<a href="' . APP_URL . '/modules/pedagogique/bulletins.php" class="nav-link' . isActive('/pedagogique/bulletins') . '"><i class="fas fa-file-alt"></i> Bulletins de notes</a>'
       . '<a href="' . APP_URL . '/modules/pedagogique/pv.php" class="nav-link' . isActive('/pedagogique/pv') . '"><i class="fas fa-file-contract"></i> PV Supérieur</a>'
     ) ?>
@@ -250,7 +250,7 @@ HTML;
     <?= sidebarGroup('coord-pedagogie', 'Pédagogie', 'fa-book-open',
         ['/pedagogique/', '/emploi_du_temps/'],
         '<a href="' . APP_URL . '/modules/pedagogique/matieres.php" class="nav-link' . isActive('/pedagogique/matieres') . '"><i class="fas fa-book-open"></i> Matières / Modules</a>'
-      . '<a href="' . APP_URL . '/modules/pedagogique/notes.php" class="nav-link' . isActive('/pedagogique/notes') . '"><i class="fas fa-edit"></i> Saisie des notes</a>'
+      . '<a href="' . APP_URL . '/modules/pedagogique/notes.php" class="nav-link' . isActive('/pedagogique/notes') . '"><i class="fas fa-eye"></i> Notes</a>'
       . '<a href="' . APP_URL . '/modules/pedagogique/bulletins.php" class="nav-link' . isActive('/pedagogique/bulletins') . '"><i class="fas fa-file-alt"></i> Bulletins de notes</a>'
       . '<a href="' . APP_URL . '/modules/pedagogique/pv.php" class="nav-link' . isActive('/pedagogique/pv') . '"><i class="fas fa-file-contract"></i> PV Supérieur</a>'
       . '<a href="' . APP_URL . '/modules/emploi_du_temps/index.php" class="nav-link' . isActive('/emploi_du_temps/') . '"><i class="fas fa-calendar-week"></i> Emplois du temps</a>'

@@ -1,7 +1,9 @@
 <?php
 require_once __DIR__ . '/../../config/config.php';
 requireLogin();
-requireRole(['admin', 'enseignant', 'scolarite', 'coordinateur']);
+requireRole(['admin', 'directeur', 'enseignant', 'scolarite', 'coordinateur']);
+
+$canEdit = hasRole('scolarite');
 
 $db   = getDB();
 $user = getCurrentUser();
@@ -52,6 +54,10 @@ function effectiveFormule(string $fCode, string $matFormule): string {
 
 // ── Save notes ───────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['notes'])) {
+    if (!$canEdit) {
+        setFlash('error', 'Accès refusé. Seule la scolarité peut enregistrer des notes.');
+        redirect('/modules/pedagogique/notes.php?' . http_build_query($_GET));
+    }
     if (!verifyCsrfToken($_POST['csrf'] ?? '')) {
         $errors[] = 'Jeton invalide.';
     } else {
@@ -277,13 +283,28 @@ if ($matiereId && $anneeId && (!$needsSemestre || $semestreId)) {
 $annees    = getAnneesAcademiques();
 $semestres = getSemestres($anneeId ?: null);
 
-$pageTitle  = 'Saisie des notes';
-$breadcrumb = ['Pédagogie' => null, 'Notes' => null];
+$pageTitle  = $canEdit ? 'Saisie des notes' : 'Consultation des notes';
+$breadcrumb = ['Pédagogie' => null, $canEdit ? 'Saisie des notes' : 'Consultation des notes' => null];
 include APP_ROOT . '/includes/header.php';
 ?>
 
 <div class="page-header no-print">
-  <h2><i class="fas fa-edit me-2 text-primary"></i>Saisie des Notes</h2>
+  <div>
+    <h2>
+      <i class="fas fa-<?= $canEdit ? 'edit' : 'eye' ?> me-2 text-primary"></i>
+      <?= $canEdit ? 'Saisie des Notes' : 'Consultation des Notes' ?>
+    </h2>
+    <?php if (!$canEdit): ?>
+    <div class="text-muted fs-sm">
+      <i class="fas fa-lock me-1"></i>Mode lecture seule — la saisie est réservée à la scolarité
+    </div>
+    <?php endif; ?>
+  </div>
+  <?php if (!$canEdit && $selectedMatiere): ?>
+  <button type="button" class="btn btn-outline-secondary" onclick="window.print()">
+    <i class="fas fa-print me-2"></i>Imprimer le PV
+  </button>
+  <?php endif; ?>
 </div>
 
 <!-- ── Filter panel ─────────────────────────────────────────────────────── -->
@@ -659,9 +680,13 @@ document.addEventListener('DOMContentLoaded', function () {
       </div>
       <div class="d-flex align-items-center gap-3">
         <span class="text-muted fs-sm"><?= count($etudiants) ?> étudiant(s)</span>
-        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">
-          <i class="fas fa-print me-1"></i>Imprimer le PV
-        </button>
+        <?php if (!$canEdit): ?>
+          <span class="badge bg-warning text-dark"><i class="fas fa-eye me-1"></i>Lecture seule</span>
+        <?php else: ?>
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+            <i class="fas fa-print me-1"></i>Imprimer le PV
+          </button>
+        <?php endif; ?>
       </div>
     </div>
   </div>
@@ -751,19 +776,31 @@ document.addEventListener('DOMContentLoaded', function () {
               <?php endif; ?>
               <?php if ($showCC): ?>
               <td>
+                <?php if ($canEdit): ?>
                 <input type="number" name="notes[<?= $e['id'] ?>][cc]"
                        class="form-control form-control-sm note-cc" style="width:88px"
                        min="0" max="20" step="0.25" placeholder="–"
                        value="<?= $n && $n['note_cc'] !== null ? $n['note_cc'] : '' ?>"
                        data-row="<?= $i ?>">
+                <?php else: ?>
+                <span class="fw-600 <?= ($n && $n['note_cc'] !== null) ? '' : 'text-muted' ?>">
+                  <?= ($n && $n['note_cc'] !== null) ? $n['note_cc'] : '–' ?>
+                </span>
+                <?php endif; ?>
               </td>
               <?php endif; ?>
               <td>
+                <?php if ($canEdit): ?>
                 <input type="number" name="notes[<?= $e['id'] ?>][exam]"
                        class="form-control form-control-sm note-exam" style="width:88px"
                        min="0" max="20" step="0.25" placeholder="–"
                        value="<?= $n && $n['note_exam'] !== null ? $n['note_exam'] : '' ?>"
                        data-row="<?= $i ?>">
+                <?php else: ?>
+                <span class="fw-600 <?= ($n && $n['note_exam'] !== null) ? '' : 'text-muted' ?>">
+                  <?= ($n && $n['note_exam'] !== null) ? $n['note_exam'] : '–' ?>
+                </span>
+                <?php endif; ?>
               </td>
               <td>
                 <span class="fw-bold" id="fin_<?= $i ?>">
@@ -795,12 +832,21 @@ document.addEventListener('DOMContentLoaded', function () {
         </table>
       </div>
 
+      <?php if ($canEdit): ?>
       <div class="d-flex gap-2 mt-3">
         <button type="submit" class="btn btn-primary px-4">
           <i class="fas fa-save me-2"></i>Enregistrer — Session <?= $sessionNum ?>
         </button>
       </div>
+      <?php endif; ?>
+
     </form>
+    <?php if (!$canEdit): ?>
+    <div class="alert alert-info d-flex align-items-center gap-2 mt-3 no-print">
+      <i class="fas fa-lock"></i>
+      <span>Mode lecture seule — la modification des notes est réservée à la <strong>scolarité</strong>.</span>
+    </div>
+    <?php endif; ?>
   </div>
 </div>
 
