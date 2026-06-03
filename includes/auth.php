@@ -10,8 +10,25 @@ function getCurrentUser(): ?array {
 function hasRole($role): bool {
     $user = getCurrentUser();
     if (!$user) return false;
+    // superadmin has all permissions
+    if ($user['role'] === 'superadmin') return true;
     if (is_array($role)) return in_array($user['role'], $role);
     return $user['role'] === $role;
+}
+
+function isSuperAdmin(): bool {
+    $user = getCurrentUser();
+    return ($user['role'] ?? '') === 'superadmin';
+}
+
+/** Returns the current school ID from session (0 if not set / superadmin with no context). */
+function getEcoleId(): int {
+    return (int)($_SESSION['ecole_id'] ?? 0);
+}
+
+/** Returns the current school record (from ecoles table). */
+function getCurrentEcole(): ?array {
+    return $_SESSION['ecole'] ?? null;
 }
 
 function requireLogin(): void {
@@ -30,28 +47,77 @@ function requireRole($role): void {
     }
 }
 
+/** Superadmin-only pages. */
+function requireSuperAdmin(): void {
+    requireLogin();
+    if (!isSuperAdmin()) {
+        setFlash('error', 'Accès réservé au SuperAdmin.');
+        header('Location: ' . APP_URL . '/dashboard.php');
+        exit;
+    }
+}
+
 function login(string $identifier, string $password): bool {
     $db = getDB();
 
     $stmt = $db->prepare("SELECT * FROM users WHERE email = ? AND actif = 1");
     $stmt->execute([$identifier]);
-
     $user = $stmt->fetch();
 
-    if ($user && password_verify($password, $user['password'])) {
-        session_regenerate_id(true);
-        $_SESSION['user_id'] = $user['id'];
-        $_SESSION['user'] = [
-            'id'           => $user['id'],
-            'nom'          => $user['nom'],
-            'prenom'       => $user['prenom'],
-            'email'        => $user['email'],
-            'role'         => $user['role'],
-            'reference_id' => $user['reference_id'],
-        ];
-        return true;
+    if (!$user || !password_verify($password, $user['password'])) {
+        return false;
     }
-    return false;
+
+    session_regenerate_id(true);
+    $_SESSION['user_id'] = $user['id'];
+    $_SESSION['user'] = [
+        'id'           => $user['id'],
+        'nom'          => $user['nom'],
+        'prenom'       => $user['prenom'],
+        'email'        => $user['email'],
+        'role'         => $user['role'],
+        'reference_id' => $user['reference_id'],
+        'ecole_id'     => $user['ecole_id'] ?? null,
+    ];
+
+    // Set school context in session
+    $ecoleId = (int)($user['ecole_id'] ?? 0);
+    $_SESSION['ecole_id'] = $ecoleId;
+
+    if ($ecoleId > 0) {
+        try {
+            $es = $db->prepare("SELECT * FROM ecoles WHERE id = ?");
+            $es->execute([$ecoleId]);
+            $_SESSION['ecole'] = $es->fetch() ?: null;
+        } catch (PDOException $e) {
+            $_SESSION['ecole'] = null;
+        }
+    } else {
+        $_SESSION['ecole'] = null;
+    }
+
+    return true;
+}
+
+/**
+ * Superadmin: switch current school context.
+ * Returns false if the school does not exist.
+ */
+function switchEcole(int $ecoleId): bool {
+    if (!isSuperAdmin()) return false;
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("SELECT * FROM ecoles WHERE id = ? AND actif = 1");
+        $stmt->execute([$ecoleId]);
+        $ecole = $stmt->fetch();
+        if (!$ecole) return false;
+        $_SESSION['ecole_id']             = $ecoleId;
+        $_SESSION['ecole']                = $ecole;
+        $_SESSION['user']['ecole_id']     = $ecoleId;
+        return true;
+    } catch (PDOException $e) {
+        return false;
+    }
 }
 
 function doLogout(): void {

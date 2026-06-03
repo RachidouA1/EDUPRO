@@ -3,8 +3,9 @@ require_once __DIR__ . '/../../config/config.php';
 requireLogin();
 requireRole(['admin', 'scolarite', 'comptable']);
 
-$db = getDB();
-$errors = [];
+$db      = getDB();
+$ecoleId = getEcoleId();
+$errors  = [];
 
 // Inline migration : colonne photo
 try { $db->exec("ALTER TABLE etudiants ADD COLUMN photo VARCHAR(255) DEFAULT NULL"); } catch (PDOException $e) {}
@@ -61,27 +62,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $matricule = generateMatricule('ETU');
 
             // INSERT étudiant (sans photo d'abord)
-            $stmt = $db->prepare("
-                INSERT INTO etudiants (matricule, nom, prenom, sexe, date_naissance, lieu_naissance,
-                    telephone, email, adresse, nom_tuteur, telephone_tuteur,
-                    filiere_id, niveau_id, annee_id, statut)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            ");
-            $stmt->execute([
-                $matricule,
-                $data['nom'], $data['prenom'], $data['sexe'],
-                $data['date_naissance'] ?: null,
-                $data['lieu_naissance'] ?: null,
-                $data['telephone'] ?: null,
-                $data['email'] ?: null,
-                $data['adresse'] ?: null,
-                $data['nom_tuteur'] ?: null,
-                $data['telephone_tuteur'] ?: null,
-                $data['filiere_id'] ?: null,
-                $data['niveau_id'] ?: null,
-                $data['annee_id'] ?: null,
-                'actif',
-            ]);
+            if ($ecoleId > 0) {
+                $stmt = $db->prepare("INSERT INTO etudiants (matricule, nom, prenom, sexe, date_naissance, lieu_naissance, telephone, email, adresse, nom_tuteur, telephone_tuteur, filiere_id, niveau_id, annee_id, statut, ecole_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+                $stmt->execute([$matricule, $data['nom'], $data['prenom'], $data['sexe'], $data['date_naissance'] ?: null, $data['lieu_naissance'] ?: null, $data['telephone'] ?: null, $data['email'] ?: null, $data['adresse'] ?: null, $data['nom_tuteur'] ?: null, $data['telephone_tuteur'] ?: null, $data['filiere_id'] ?: null, $data['niveau_id'] ?: null, $data['annee_id'] ?: null, 'actif', $ecoleId]);
+            } else {
+                $stmt = $db->prepare("INSERT INTO etudiants (matricule, nom, prenom, sexe, date_naissance, lieu_naissance, telephone, email, adresse, nom_tuteur, telephone_tuteur, filiere_id, niveau_id, annee_id, statut) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+                $stmt->execute([$matricule, $data['nom'], $data['prenom'], $data['sexe'], $data['date_naissance'] ?: null, $data['lieu_naissance'] ?: null, $data['telephone'] ?: null, $data['email'] ?: null, $data['adresse'] ?: null, $data['nom_tuteur'] ?: null, $data['telephone_tuteur'] ?: null, $data['filiere_id'] ?: null, $data['niveau_id'] ?: null, $data['annee_id'] ?: null, 'actif']);
+            }
             $newId = $db->lastInsertId();
 
             // Sauvegarde de la photo

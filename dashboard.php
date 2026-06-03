@@ -2,41 +2,157 @@
 require_once __DIR__ . '/config/config.php';
 requireLogin();
 
-$db    = getDB();
-$user  = getCurrentUser();
-$role  = $user['role'] ?? 'etudiant';
-$annee = getActiveAnnee();
+$db      = getDB();
+$user    = getCurrentUser();
+$role    = $user['role'] ?? 'etudiant';
+$ecoleId = getEcoleId();
+
+// SuperAdmin sans contexte école : rediriger vers la gestion des écoles
+if ($role === 'superadmin' && !$ecoleId) {
+    $pageTitle = 'SuperAdmin – Vue globale';
+    include APP_ROOT . '/includes/header.php';
+    ?>
+    <div class="page-header">
+      <h2><i class="fas fa-crown me-2" style="color:#6200ea"></i>Super Administration</h2>
+    </div>
+    <?php
+    try {
+        $allEcoles = $db->query("SELECT e.*, (SELECT COUNT(*) FROM users u WHERE u.ecole_id=e.id) AS nb_users, (SELECT COUNT(*) FROM etudiants et WHERE et.ecole_id=e.id) AS nb_etudiants FROM ecoles e ORDER BY e.nom")->fetchAll();
+    } catch (PDOException $ex) { $allEcoles = []; }
+    ?>
+    <div class="row g-3 mb-4">
+      <div class="col-md-4">
+        <div class="stat-card" style="background:linear-gradient(135deg,#6200ea,#9c27b0)">
+          <div class="stat-icon"><i class="fas fa-school"></i></div>
+          <div class="stat-body">
+            <div class="stat-value" style="color:#fff"><?= count($allEcoles) ?></div>
+            <div class="stat-label" style="color:rgba(255,255,255,.8)">Établissements</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="stat-card stat-blue">
+          <div class="stat-icon"><i class="fas fa-users"></i></div>
+          <div class="stat-body">
+            <div class="stat-value"><?= array_sum(array_column($allEcoles,'nb_users')) ?></div>
+            <div class="stat-label">Utilisateurs total</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="stat-card stat-green">
+          <div class="stat-icon"><i class="fas fa-user-graduate"></i></div>
+          <div class="stat-body">
+            <div class="stat-value"><?= array_sum(array_column($allEcoles,'nb_etudiants')) ?></div>
+            <div class="stat-label">Étudiants total</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Établissements enregistrés</strong>
+        <a href="<?= APP_URL ?>/modules/superadmin/ecole_form.php" class="btn btn-sm btn-primary"><i class="fas fa-plus me-1"></i>Nouvelle école</a>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead><tr><th>Code</th><th>Établissement</th><th>Ville</th><th>Utilisateurs</th><th>Étudiants</th><th>Statut</th><th>Actions</th></tr></thead>
+          <tbody>
+            <?php foreach ($allEcoles as $ec): ?>
+            <tr>
+              <td><code><?= h($ec['code']) ?></code></td>
+              <td class="fw-600"><?= h($ec['nom']) ?></td>
+              <td class="text-muted"><?= h($ec['ville'] ?? '–') ?></td>
+              <td><?= (int)$ec['nb_users'] ?></td>
+              <td><?= (int)$ec['nb_etudiants'] ?></td>
+              <td><?= $ec['actif'] ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>' ?></td>
+              <td>
+                <a href="<?= APP_URL ?>/modules/superadmin/switch_ecole.php?id=<?= $ec['id'] ?>&csrf=<?= h(generateCsrfToken()) ?>"
+                   class="btn btn-sm btn-primary"><i class="fas fa-sign-in-alt me-1"></i>Gérer</a>
+              </td>
+            </tr>
+            <?php endforeach; ?>
+            <?php if (!$allEcoles): ?>
+              <tr><td colspan="7" class="text-center text-muted py-4">Aucun établissement. <a href="<?= APP_URL ?>/modules/superadmin/ecole_form.php">Créer le premier</a>.</td></tr>
+            <?php endif; ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <?php
+    include APP_ROOT . '/includes/footer.php';
+    exit;
+}
+
+$annee   = getActiveAnnee();
 $anneeId = $annee['id'] ?? 0;
+
+// Helper: execute a prepared statement safely, return 0 on failure
+function _safeCount(PDO $db, string $sql, array $params): int {
+    try { $s = $db->prepare($sql); $s->execute($params); return (int)$s->fetchColumn(); }
+    catch (PDOException $e) { return 0; }
+}
+function _safeSum(PDO $db, string $sql, array $params): float {
+    try { $s = $db->prepare($sql); $s->execute($params); return (float)$s->fetchColumn(); }
+    catch (PDOException $e) { return 0.0; }
+}
 
 // ===== Stats communes =====
 $stats = [];
-$stats['etudiants']  = $db->query("SELECT COUNT(*) FROM etudiants WHERE statut='actif'")->fetchColumn();
-$stats['enseignants'] = $db->query("SELECT COUNT(*) FROM enseignants WHERE actif=1")->fetchColumn();
-$stats['filieres']   = $db->query("SELECT COUNT(*) FROM filieres WHERE actif=1")->fetchColumn();
+if ($ecoleId > 0) {
+    $stats['etudiants']  = _safeCount($db, "SELECT COUNT(*) FROM etudiants  WHERE statut='actif' AND ecole_id=?", [$ecoleId]);
+    $stats['enseignants']= _safeCount($db, "SELECT COUNT(*) FROM enseignants WHERE actif=1 AND ecole_id=?",       [$ecoleId]);
+    $stats['filieres']   = _safeCount($db, "SELECT COUNT(*) FROM filieres    WHERE actif=1 AND ecole_id=?",       [$ecoleId]);
+} else {
+    $stats['etudiants']  = _safeCount($db, "SELECT COUNT(*) FROM etudiants  WHERE statut='actif'", []);
+    $stats['enseignants']= _safeCount($db, "SELECT COUNT(*) FROM enseignants WHERE actif=1",        []);
+    $stats['filieres']   = _safeCount($db, "SELECT COUNT(*) FROM filieres    WHERE actif=1",        []);
+}
 
-// ===== Stats financières (admin, comptable uniquement — directeur exclu) =====
-$showFinance = in_array($role, ['admin', 'comptable']);
+// ===== Stats financières =====
+$showFinance = in_array($role, ['admin', 'comptable', 'superadmin']);
 if ($showFinance) {
-    $stats['recettes_mois'] = $db->query("SELECT COALESCE(SUM(montant),0) FROM recettes WHERE MONTH(date_recette)=MONTH(NOW()) AND YEAR(date_recette)=YEAR(NOW())")->fetchColumn();
-    $stats['depenses_mois'] = $db->query("SELECT COALESCE(SUM(montant),0) FROM depenses WHERE statut='approuvee' AND MONTH(date_depense)=MONTH(NOW()) AND YEAR(date_depense)=YEAR(NOW())")->fetchColumn();
-    $stats['solde_mois']    = $stats['recettes_mois'] - $stats['depenses_mois'];
+    if ($ecoleId > 0) {
+        $stats['recettes_mois'] = _safeSum($db, "SELECT COALESCE(SUM(montant),0) FROM recettes WHERE ecole_id=? AND MONTH(date_recette)=MONTH(NOW()) AND YEAR(date_recette)=YEAR(NOW())", [$ecoleId]);
+        $stats['depenses_mois'] = _safeSum($db, "SELECT COALESCE(SUM(montant),0) FROM depenses WHERE ecole_id=? AND statut='approuvee' AND MONTH(date_depense)=MONTH(NOW()) AND YEAR(date_depense)=YEAR(NOW())", [$ecoleId]);
+    } else {
+        $stats['recettes_mois'] = _safeSum($db, "SELECT COALESCE(SUM(montant),0) FROM recettes WHERE MONTH(date_recette)=MONTH(NOW()) AND YEAR(date_recette)=YEAR(NOW())", []);
+        $stats['depenses_mois'] = _safeSum($db, "SELECT COALESCE(SUM(montant),0) FROM depenses WHERE statut='approuvee' AND MONTH(date_depense)=MONTH(NOW()) AND YEAR(date_depense)=YEAR(NOW())", []);
+    }
+    $stats['solde_mois'] = $stats['recettes_mois'] - $stats['depenses_mois'];
+
+    $sixMonthsAgo = date('Y-m-01', strtotime('-5 months'));
+    try {
+        if ($ecoleId > 0) {
+            $recStmt = $db->prepare("SELECT DATE_FORMAT(date_recette,'%Y-%m') AS m, COALESCE(SUM(montant),0) AS t FROM recettes WHERE ecole_id=? AND date_recette>=? GROUP BY m");
+            $recStmt->execute([$ecoleId, $sixMonthsAgo]);
+            $depStmt = $db->prepare("SELECT DATE_FORMAT(date_depense,'%Y-%m') AS m, COALESCE(SUM(montant),0) AS t FROM depenses WHERE ecole_id=? AND statut='approuvee' AND date_depense>=? GROUP BY m");
+            $depStmt->execute([$ecoleId, $sixMonthsAgo]);
+        } else {
+            $recStmt = $db->prepare("SELECT DATE_FORMAT(date_recette,'%Y-%m') AS m, COALESCE(SUM(montant),0) AS t FROM recettes WHERE date_recette>=? GROUP BY m");
+            $recStmt->execute([$sixMonthsAgo]);
+            $depStmt = $db->prepare("SELECT DATE_FORMAT(date_depense,'%Y-%m') AS m, COALESCE(SUM(montant),0) AS t FROM depenses WHERE statut='approuvee' AND date_depense>=? GROUP BY m");
+            $depStmt->execute([$sixMonthsAgo]);
+        }
+        $recByMonth = array_column($recStmt->fetchAll(), 't', 'm');
+        $depByMonth = array_column($depStmt->fetchAll(), 't', 'm');
+    } catch (PDOException $e) { $recByMonth = []; $depByMonth = []; }
 
     $chartData = [];
     for ($i = 5; $i >= 0; $i--) {
-        $m = date('Y-m', strtotime("-$i months"));
-        [$yr, $mn] = explode('-', $m);
-        $rec = $db->prepare("SELECT COALESCE(SUM(montant),0) FROM recettes WHERE YEAR(date_recette)=? AND MONTH(date_recette)=?");
-        $rec->execute([$yr, $mn]); $r = (float)$rec->fetchColumn();
-        $dep = $db->prepare("SELECT COALESCE(SUM(montant),0) FROM depenses WHERE statut='approuvee' AND YEAR(date_depense)=? AND MONTH(date_depense)=?");
-        $dep->execute([$yr, $mn]); $d = (float)$dep->fetchColumn();
-        $chartData[] = ['mois' => date('M Y', mktime(0,0,0,$mn,1,$yr)), 'recettes' => $r, 'depenses' => $d];
+        $m = date('Y-m', strtotime("-$i months")); [$yr, $mn] = explode('-', $m);
+        $chartData[] = ['mois' => date('M Y', mktime(0,0,0,(int)$mn,1,(int)$yr)), 'recettes' => (float)($recByMonth[$m] ?? 0), 'depenses' => (float)($depByMonth[$m] ?? 0)];
     }
 }
 
-// ===== Stats pédagogiques (admin, directeur, scolarite, enseignant) =====
-$showPedagogie = in_array($role, ['admin', 'directeur', 'scolarite', 'enseignant', 'coordinateur']);
+// ===== Stats pédagogiques =====
+$showPedagogie = in_array($role, ['admin', 'directeur', 'scolarite', 'enseignant', 'coordinateur', 'superadmin']);
 if ($showPedagogie) {
-    $stats['paiements_attente'] = $db->query("SELECT COUNT(*) FROM paiements_etudiants WHERE statut IN ('en_attente','partiel')")->fetchColumn();
+    if ($ecoleId > 0) {
+        $stats['paiements_attente'] = _safeCount($db, "SELECT COUNT(*) FROM paiements_etudiants pe JOIN etudiants et ON et.id=pe.etudiant_id WHERE et.ecole_id=? AND pe.statut IN ('en_attente','partiel')", [$ecoleId]);
+    } else {
+        $stats['paiements_attente'] = _safeCount($db, "SELECT COUNT(*) FROM paiements_etudiants WHERE statut IN ('en_attente','partiel')", []);
+    }
 }
 
 // ===== Données coordinateur =====
@@ -112,21 +228,22 @@ if ($showRecentEtudiants) {
 // ===== Stats courriers (assistante de direction) =====
 if ($role === 'assistante') {
     try {
-        $stats['depart_total']  = (int)$db->query("SELECT COUNT(*) FROM courriers_depart")->fetchColumn();
-        $stats['arrivee_total'] = (int)$db->query("SELECT COUNT(*) FROM courriers_arrivee")->fetchColumn();
-        $stats['depart_mois']   = (int)$db->query("SELECT COUNT(*) FROM courriers_depart WHERE MONTH(date_depart)=MONTH(NOW()) AND YEAR(date_depart)=YEAR(NOW())")->fetchColumn();
-        $stats['arrivee_mois']  = (int)$db->query("SELECT COUNT(*) FROM courriers_arrivee WHERE MONTH(date_arrivee)=MONTH(NOW()) AND YEAR(date_arrivee)=YEAR(NOW())")->fetchColumn();
-        $stats['sans_reponse']  = (int)$db->query("SELECT COUNT(*) FROM courriers_arrivee WHERE date_reponse IS NULL")->fetchColumn();
+        $eFilter = $ecoleId > 0 ? ' AND ecole_id=' . (int)$ecoleId : '';
+        $stats['depart_total']  = _safeCount($db, "SELECT COUNT(*) FROM courriers_depart  WHERE 1=1$eFilter", []);
+        $stats['arrivee_total'] = _safeCount($db, "SELECT COUNT(*) FROM courriers_arrivee WHERE 1=1$eFilter", []);
+        $stats['depart_mois']   = _safeCount($db, "SELECT COUNT(*) FROM courriers_depart  WHERE MONTH(date_depart)=MONTH(NOW())  AND YEAR(date_depart)=YEAR(NOW())$eFilter",  []);
+        $stats['arrivee_mois']  = _safeCount($db, "SELECT COUNT(*) FROM courriers_arrivee WHERE MONTH(date_arrivee)=MONTH(NOW()) AND YEAR(date_arrivee)=YEAR(NOW())$eFilter", []);
+        $stats['sans_reponse']  = _safeCount($db, "SELECT COUNT(*) FROM courriers_arrivee WHERE date_reponse IS NULL$eFilter", []);
 
-        $recentDepart  = $db->query("SELECT * FROM courriers_depart ORDER BY date_depart DESC, id DESC LIMIT 5")->fetchAll();
-        $recentArrivee = $db->query("SELECT * FROM courriers_arrivee ORDER BY date_arrivee DESC, id DESC LIMIT 5")->fetchAll();
+        $stRD = $db->query("SELECT * FROM courriers_depart  WHERE 1=1$eFilter ORDER BY date_depart  DESC, id DESC LIMIT 5"); $recentDepart  = $stRD->fetchAll();
+        $stRA = $db->query("SELECT * FROM courriers_arrivee WHERE 1=1$eFilter ORDER BY date_arrivee DESC, id DESC LIMIT 5"); $recentArrivee = $stRA->fetchAll();
 
         $sixMonthsAgo = date('Y-m-01', strtotime('-5 months'));
-        $dStmt = $db->prepare("SELECT DATE_FORMAT(date_depart,'%Y-%m') AS m, COUNT(*) AS cnt FROM courriers_depart WHERE date_depart >= ? GROUP BY m");
-        $dStmt->execute([$sixMonthsAgo]);
+        $dStmt = $db->prepare("SELECT DATE_FORMAT(date_depart,'%Y-%m') AS m, COUNT(*) AS cnt FROM courriers_depart WHERE ecole_id=? AND date_depart >= ? GROUP BY m");
+        $dStmt->execute([$ecoleId, $sixMonthsAgo]);
         $dByMonth = array_column($dStmt->fetchAll(), 'cnt', 'm');
-        $aStmt = $db->prepare("SELECT DATE_FORMAT(date_arrivee,'%Y-%m') AS m, COUNT(*) AS cnt FROM courriers_arrivee WHERE date_arrivee >= ? GROUP BY m");
-        $aStmt->execute([$sixMonthsAgo]);
+        $aStmt = $db->prepare("SELECT DATE_FORMAT(date_arrivee,'%Y-%m') AS m, COUNT(*) AS cnt FROM courriers_arrivee WHERE ecole_id=? AND date_arrivee >= ? GROUP BY m");
+        $aStmt->execute([$ecoleId, $sixMonthsAgo]);
         $aByMonth = array_column($aStmt->fetchAll(), 'cnt', 'm');
         $courriersChart = [];
         for ($i = 5; $i >= 0; $i--) {

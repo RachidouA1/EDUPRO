@@ -41,65 +41,116 @@ function showFlash(): void {
 }
 
 function generateMatricule(string $prefix): string {
-    $db    = getDB();
-    $short = substr(date('Y'), 2);
-    $table = ($prefix === 'ETU') ? 'etudiants' : 'enseignants';
-    // Partir du COUNT pour éviter les trous, mais vérifier l'unicité si des suppressions ont eu lieu
-    $stmt  = $db->query("SELECT COUNT(*) FROM {$table}");
-    $count = (int)$stmt->fetchColumn();
+    $db      = getDB();
+    $short   = substr(date('Y'), 2);
+    $table   = ($prefix === 'ETU') ? 'etudiants' : 'enseignants';
+    $ecoleId = getEcoleId();
+    try {
+        if ($ecoleId > 0) {
+            $s = $db->prepare("SELECT COUNT(*) FROM `{$table}` WHERE ecole_id = ?");
+            $s->execute([$ecoleId]);
+        } else {
+            $s = $db->query("SELECT COUNT(*) FROM `{$table}`");
+        }
+        $count = (int)$s->fetchColumn();
+    } catch (PDOException $e) { $count = 0; }
     do {
         $count++;
         $candidate = $prefix . $short . str_pad($count, 4, '0', STR_PAD_LEFT);
-        $chk = $db->prepare("SELECT COUNT(*) FROM {$table} WHERE matricule=?");
+        $chk = $db->prepare("SELECT COUNT(*) FROM `{$table}` WHERE matricule = ?");
         $chk->execute([$candidate]);
     } while ((int)$chk->fetchColumn() > 0);
     return $candidate;
 }
 
 function getActiveAnnee(): ?array {
-    $db = getDB();
-    $stmt = $db->query("SELECT * FROM annees_academiques WHERE actif = 1 LIMIT 1");
-    $row = $stmt->fetch();
-    return $row ?: null;
+    $db      = getDB();
+    $ecoleId = getEcoleId();
+    try {
+        if ($ecoleId > 0) {
+            $stmt = $db->prepare("SELECT * FROM annees_academiques WHERE actif = 1 AND ecole_id = ? LIMIT 1");
+            $stmt->execute([$ecoleId]);
+        } else {
+            $stmt = $db->query("SELECT * FROM annees_academiques WHERE actif = 1 LIMIT 1");
+        }
+        return $stmt->fetch() ?: null;
+    } catch (PDOException $e) { return null; }
 }
 
 function getActiveSemestre(): ?array {
-    $db = getDB();
-    $stmt = $db->query("SELECT * FROM semestres WHERE actif = 1 LIMIT 1");
-    $row = $stmt->fetch();
-    return $row ?: null;
+    $db      = getDB();
+    $ecoleId = getEcoleId();
+    try {
+        if ($ecoleId > 0) {
+            $stmt = $db->prepare("SELECT s.* FROM semestres s JOIN annees_academiques a ON a.id = s.annee_id WHERE s.actif = 1 AND a.ecole_id = ? LIMIT 1");
+            $stmt->execute([$ecoleId]);
+        } else {
+            $stmt = $db->query("SELECT * FROM semestres WHERE actif = 1 LIMIT 1");
+        }
+        return $stmt->fetch() ?: null;
+    } catch (PDOException $e) { return null; }
 }
 
 function getFilieres(): array {
-    $db = getDB();
-    return $db->query("SELECT * FROM filieres WHERE actif = 1 ORDER BY nom")->fetchAll();
+    $db      = getDB();
+    $ecoleId = getEcoleId();
+    try {
+        if ($ecoleId > 0) {
+            $stmt = $db->prepare("SELECT * FROM filieres WHERE actif = 1 AND ecole_id = ? ORDER BY nom");
+            $stmt->execute([$ecoleId]);
+        } else {
+            $stmt = $db->query("SELECT * FROM filieres WHERE actif = 1 ORDER BY nom");
+        }
+        return $stmt->fetchAll();
+    } catch (PDOException $e) { return []; }
 }
 
 function getNiveaux(?int $filiere_id = null): array {
-    $db = getDB();
-    if ($filiere_id) {
-        $stmt = $db->prepare("SELECT n.*, f.nom as filiere_nom FROM niveaux n JOIN filieres f ON f.id = n.filiere_id WHERE n.filiere_id = ? ORDER BY n.ordre");
-        $stmt->execute([$filiere_id]);
-    } else {
-        $stmt = $db->query("SELECT n.*, f.nom as filiere_nom FROM niveaux n JOIN filieres f ON f.id = n.filiere_id ORDER BY f.nom, n.ordre");
-    }
-    return $stmt->fetchAll();
+    $db      = getDB();
+    $ecoleId = getEcoleId();
+    try {
+        if ($filiere_id) {
+            $stmt = $db->prepare("SELECT n.*, f.nom as filiere_nom FROM niveaux n JOIN filieres f ON f.id = n.filiere_id WHERE n.filiere_id = ? ORDER BY n.ordre");
+            $stmt->execute([$filiere_id]);
+        } elseif ($ecoleId > 0) {
+            $stmt = $db->prepare("SELECT n.*, f.nom as filiere_nom FROM niveaux n JOIN filieres f ON f.id = n.filiere_id WHERE f.ecole_id = ? ORDER BY f.nom, n.ordre");
+            $stmt->execute([$ecoleId]);
+        } else {
+            $stmt = $db->query("SELECT n.*, f.nom as filiere_nom FROM niveaux n JOIN filieres f ON f.id = n.filiere_id ORDER BY f.nom, n.ordre");
+        }
+        return $stmt->fetchAll();
+    } catch (PDOException $e) { return []; }
 }
 
 function getAnneesAcademiques(): array {
-    $db = getDB();
-    return $db->query("SELECT * FROM annees_academiques ORDER BY libelle DESC")->fetchAll();
+    $db      = getDB();
+    $ecoleId = getEcoleId();
+    try {
+        if ($ecoleId > 0) {
+            $stmt = $db->prepare("SELECT * FROM annees_academiques WHERE ecole_id = ? ORDER BY libelle DESC");
+            $stmt->execute([$ecoleId]);
+        } else {
+            $stmt = $db->query("SELECT * FROM annees_academiques ORDER BY libelle DESC");
+        }
+        return $stmt->fetchAll();
+    } catch (PDOException $e) { return []; }
 }
 
 function getSemestres(?int $annee_id = null): array {
-    $db = getDB();
-    if ($annee_id) {
-        $stmt = $db->prepare("SELECT * FROM semestres WHERE annee_id = ? ORDER BY id");
-        $stmt->execute([$annee_id]);
-    } else {
-        $stmt = $db->query("SELECT s.*, a.libelle as annee_libelle FROM semestres s JOIN annees_academiques a ON a.id = s.annee_id ORDER BY a.libelle DESC, s.id");
-    }
-    return $stmt->fetchAll();
+    $db      = getDB();
+    $ecoleId = getEcoleId();
+    try {
+        if ($annee_id) {
+            $stmt = $db->prepare("SELECT * FROM semestres WHERE annee_id = ? ORDER BY id");
+            $stmt->execute([$annee_id]);
+        } elseif ($ecoleId > 0) {
+            $stmt = $db->prepare("SELECT s.*, a.libelle as annee_libelle FROM semestres s JOIN annees_academiques a ON a.id = s.annee_id WHERE a.ecole_id = ? ORDER BY a.libelle DESC, s.id");
+            $stmt->execute([$ecoleId]);
+        } else {
+            $stmt = $db->query("SELECT s.*, a.libelle as annee_libelle FROM semestres s JOIN annees_academiques a ON a.id = s.annee_id ORDER BY a.libelle DESC, s.id");
+        }
+        return $stmt->fetchAll();
+    } catch (PDOException $e) { return []; }
 }
 
 function calculateMoyenne(array $notes): ?float {
@@ -235,31 +286,102 @@ function redirect(string $url): void {
     exit;
 }
 
-// ===== Paramètres de l'application =====
+// ===== Paramètres de l'application (scopés à l'école courante) =====
 
 function getParam(string $cle, string $default = ''): string {
-    static $cache = null;
-    if ($cache === null) {
-        try {
-            $rows  = getDB()->query("SELECT cle, valeur FROM parametres")->fetchAll();
-            $cache = [];
-            foreach ($rows as $r) { $cache[$r['cle']] = $r['valeur'] ?? ''; }
-        } catch (PDOException $e) {
-            $cache = [];
+    static $cache = [];
+    $ecoleId = getEcoleId();
+
+    // Try to serve from the ecoles table first for key school fields
+    $ecoleFields = ['etablissement_nom','etablissement_slogan','etablissement_adresse','etablissement_ville',
+                    'etablissement_pays','etablissement_telephone','etablissement_email',
+                    'logo_path','cachet_dg_path','theme_couleur_primaire','theme_couleur_sidebar'];
+
+    if (in_array($cle, $ecoleFields) && $ecoleId > 0) {
+        $ecole = getCurrentEcole();
+        if ($ecole) {
+            $map = [
+                'etablissement_nom'       => 'nom',
+                'etablissement_slogan'    => 'slogan',
+                'etablissement_adresse'   => 'adresse',
+                'etablissement_ville'     => 'ville',
+                'etablissement_pays'      => 'pays',
+                'etablissement_telephone' => 'telephone',
+                'etablissement_email'     => 'email',
+                'logo_path'               => 'logo_path',
+                'cachet_dg_path'          => 'cachet_dg_path',
+                'theme_couleur_primaire'  => 'theme_couleur_primaire',
+                'theme_couleur_sidebar'   => 'theme_couleur_sidebar',
+            ];
+            if (isset($map[$cle]) && isset($ecole[$map[$cle]])) {
+                return (string)($ecole[$map[$cle]] ?? $default);
+            }
         }
     }
-    return $cache[$cle] ?? $default;
+
+    // Fall back to parametres table (school-scoped when possible)
+    if (!isset($cache[$ecoleId])) {
+        try {
+            if ($ecoleId > 0) {
+                $stmt = getDB()->prepare("SELECT cle, valeur FROM parametres WHERE ecole_id = ?");
+                $stmt->execute([$ecoleId]);
+            } else {
+                $stmt = getDB()->query("SELECT cle, valeur FROM parametres LIMIT 500");
+            }
+            $rows = $stmt->fetchAll();
+            $cache[$ecoleId] = [];
+            foreach ($rows as $r) $cache[$ecoleId][$r['cle']] = $r['valeur'] ?? '';
+        } catch (PDOException $e) {
+            $cache[$ecoleId] = [];
+        }
+    }
+    return $cache[$ecoleId][$cle] ?? $default;
 }
 
 function setParam(string $cle, string $valeur): void {
-    getDB()->prepare("INSERT INTO parametres (cle, valeur) VALUES (?,?) ON DUPLICATE KEY UPDATE valeur=VALUES(valeur), updated_at=NOW()")
-           ->execute([$cle, $valeur]);
+    $ecoleId = getEcoleId();
+
+    // Sync to ecoles table for core fields
+    $map = [
+        'etablissement_nom'       => 'nom',
+        'etablissement_slogan'    => 'slogan',
+        'etablissement_adresse'   => 'adresse',
+        'etablissement_ville'     => 'ville',
+        'etablissement_pays'      => 'pays',
+        'etablissement_telephone' => 'telephone',
+        'etablissement_email'     => 'email',
+        'logo_path'               => 'logo_path',
+        'cachet_dg_path'          => 'cachet_dg_path',
+        'theme_couleur_primaire'  => 'theme_couleur_primaire',
+        'theme_couleur_sidebar'   => 'theme_couleur_sidebar',
+    ];
+    if (isset($map[$cle]) && $ecoleId > 0) {
+        try {
+            $col = $map[$cle];
+            getDB()->prepare("UPDATE ecoles SET `$col` = ? WHERE id = ?")
+                   ->execute([$valeur, $ecoleId]);
+            $es = getDB()->prepare("SELECT * FROM ecoles WHERE id = ?");
+            $es->execute([$ecoleId]);
+            $_SESSION['ecole'] = $es->fetch() ?: null;
+        } catch (PDOException $e) {}
+    }
+
+    // Write to parametres table (with ecole_id when available)
+    try {
+        if ($ecoleId > 0) {
+            getDB()->prepare("INSERT INTO parametres (cle, valeur, ecole_id) VALUES (?,?,?) ON DUPLICATE KEY UPDATE valeur=VALUES(valeur), updated_at=NOW()")
+                   ->execute([$cle, $valeur, $ecoleId]);
+        } else {
+            getDB()->prepare("INSERT INTO parametres (cle, valeur) VALUES (?,?) ON DUPLICATE KEY UPDATE valeur=VALUES(valeur), updated_at=NOW()")
+                   ->execute([$cle, $valeur]);
+        }
+    } catch (PDOException $e) {}
 }
 
 function getLogoUrl(): string {
     $path = getParam('logo_path');
     if ($path && file_exists(APP_ROOT . '/assets/' . $path)) {
-        return APP_URL . '/assets/' . $path;
+        return APP_URL . '/assets/' . $path . '?v=' . filemtime(APP_ROOT . '/assets/' . $path);
     }
     return '';
 }

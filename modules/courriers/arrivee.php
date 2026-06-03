@@ -3,9 +3,10 @@ require_once __DIR__ . '/../../config/config.php';
 requireLogin();
 requireRole(['admin', 'directeur', 'assistante']);
 
-$db   = getDB();
-$user = getCurrentUser();
-$errors = [];
+$db      = getDB();
+$user    = getCurrentUser();
+$ecoleId = getEcoleId();
+$errors  = [];
 
 // Inline migration : créer la table si elle n'existe pas encore
 try {
@@ -81,10 +82,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     redirect('/modules/courriers/arrivee.php');
                 }
             } else {
-                $db->prepare("INSERT INTO courriers_arrivee
-                    (date_arrivee,date_correspondance,n_correspondance,expediteur,objet,date_reponse,n_reponse,created_by)
-                    VALUES (?,?,?,?,?,?,?,?)")
-                   ->execute(array_merge($params, [$user['id']]));
+                if ($ecoleId > 0) {
+                    $db->prepare("INSERT INTO courriers_arrivee (date_arrivee,date_correspondance,n_correspondance,expediteur,objet,date_reponse,n_reponse,created_by,ecole_id) VALUES (?,?,?,?,?,?,?,?,?)")
+                       ->execute(array_merge($params, [$user['id'], $ecoleId]));
+                } else {
+                    $db->prepare("INSERT INTO courriers_arrivee (date_arrivee,date_correspondance,n_correspondance,expediteur,objet,date_reponse,n_reponse,created_by) VALUES (?,?,?,?,?,?,?,?)")
+                       ->execute(array_merge($params, [$user['id']]));
+                }
                 setFlash('success', 'Courrier arrivée enregistré.');
                 redirect('/modules/courriers/arrivee.php');
             }
@@ -108,6 +112,7 @@ if ($search) {
     $where[] = '(expediteur LIKE ? OR objet LIKE ? OR n_correspondance LIKE ?)';
     $params  = array_merge($params, ["%$search%", "%$search%", "%$search%"]);
 }
+if ($ecoleId > 0) { $where[] = 'ca.ecole_id = ?'; $params[] = $ecoleId; }
 $stmt = $db->prepare("SELECT ca.*, u.nom, u.prenom FROM courriers_arrivee ca
     LEFT JOIN users u ON u.id = ca.created_by
     WHERE " . implode(' AND ', $where) . " ORDER BY ca.date_arrivee DESC, ca.id DESC");

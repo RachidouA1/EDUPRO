@@ -3,9 +3,10 @@ require_once __DIR__ . '/../../config/config.php';
 requireLogin();
 requireRole(['admin', 'directeur', 'assistante']);
 
-$db   = getDB();
-$user = getCurrentUser();
-$errors = [];
+$db      = getDB();
+$user    = getCurrentUser();
+$ecoleId = getEcoleId();
+$errors  = [];
 
 // Inline migration : créer la table si elle n'existe pas encore
 try {
@@ -69,8 +70,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     redirect('/modules/courriers/depart.php');
                 }
             } else {
-                $db->prepare("INSERT INTO courriers_depart (nbre_pieces,date_depart,destinataire,objet,n_archives,observations,created_by) VALUES (?,?,?,?,?,?,?)")
-                   ->execute([$nbre_pieces, $date_depart, $destinataire, $objet, $n_archives ?: null, $observations ?: null, $user['id']]);
+                if ($ecoleId > 0) {
+                    $db->prepare("INSERT INTO courriers_depart (nbre_pieces,date_depart,destinataire,objet,n_archives,observations,created_by,ecole_id) VALUES (?,?,?,?,?,?,?,?)")
+                       ->execute([$nbre_pieces, $date_depart, $destinataire, $objet, $n_archives ?: null, $observations ?: null, $user['id'], $ecoleId]);
+                } else {
+                    $db->prepare("INSERT INTO courriers_depart (nbre_pieces,date_depart,destinataire,objet,n_archives,observations,created_by) VALUES (?,?,?,?,?,?,?)")
+                       ->execute([$nbre_pieces, $date_depart, $destinataire, $objet, $n_archives ?: null, $observations ?: null, $user['id']]);
+                }
                 setFlash('success', 'Courrier départ enregistré.');
                 redirect('/modules/courriers/depart.php');
             }
@@ -94,6 +100,7 @@ if ($search) {
     $where[] = '(destinataire LIKE ? OR objet LIKE ? OR n_archives LIKE ?)';
     $params  = array_merge($params, ["%$search%", "%$search%", "%$search%"]);
 }
+if ($ecoleId > 0) { $where[] = 'cd.ecole_id = ?'; $params[] = $ecoleId; }
 $stmt = $db->prepare("SELECT cd.*, u.nom, u.prenom FROM courriers_depart cd
     LEFT JOIN users u ON u.id = cd.created_by
     WHERE " . implode(' AND ', $where) . " ORDER BY cd.date_depart DESC, cd.id DESC");

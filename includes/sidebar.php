@@ -29,13 +29,14 @@ if (!function_exists('sectionOpen')) {
 
 // Couleurs et libellés par rôle
 $roleConfig = [
-    'admin'        => ['color' => '#1a73e8', 'label' => 'Administrateur',      'icon' => 'fa-user-shield'],
-    'directeur'    => ['color' => '#5c35a0', 'label' => 'Directeur',           'icon' => 'fa-user-tie'],
-    'scolarite'    => ['color' => '#0097a7', 'label' => 'Scolarité',            'icon' => 'fa-user-cog'],
-    'enseignant'   => ['color' => '#34a853', 'label' => 'Enseignant',           'icon' => 'fa-chalkboard-teacher'],
-    'comptable'    => ['color' => '#f57c00', 'label' => 'Comptable',            'icon' => 'fa-calculator'],
-    'etudiant'     => ['color' => '#ea4335', 'label' => 'Étudiant',             'icon' => 'fa-user-graduate'],
-    'coordinateur' => ['color' => '#2e7d32', 'label' => 'Coordinateur',         'icon' => 'fa-sitemap'],
+    'superadmin'   => ['color' => '#6200ea', 'label' => 'Super Administrateur', 'icon' => 'fa-crown'],
+    'admin'        => ['color' => '#1a73e8', 'label' => 'Administrateur',       'icon' => 'fa-user-shield'],
+    'directeur'    => ['color' => '#5c35a0', 'label' => 'Directeur',            'icon' => 'fa-user-tie'],
+    'scolarite'    => ['color' => '#0097a7', 'label' => 'Scolarité',             'icon' => 'fa-user-cog'],
+    'enseignant'   => ['color' => '#34a853', 'label' => 'Enseignant',            'icon' => 'fa-chalkboard-teacher'],
+    'comptable'    => ['color' => '#f57c00', 'label' => 'Comptable',             'icon' => 'fa-calculator'],
+    'etudiant'     => ['color' => '#ea4335', 'label' => 'Étudiant',              'icon' => 'fa-user-graduate'],
+    'coordinateur' => ['color' => '#2e7d32', 'label' => 'Coordinateur',          'icon' => 'fa-sitemap'],
     'assistante'   => ['color' => '#c0392b', 'label' => 'Assistante Direction',  'icon' => 'fa-envelope-open-text'],
 ];
 $rc = $roleConfig[$role] ?? $roleConfig['etudiant'];
@@ -61,19 +62,51 @@ HTML;
 ?>
 <nav id="sidebar">
   <!-- Brand -->
-  <?php $sidebarLogo = getLogoUrl(); $sidebarNom = getParam('etablissement_nom', 'EPSI'); ?>
+  <?php
+    $sidebarLogo = getLogoUrl();
+    $sidebarNom  = isSuperAdmin() && !getEcoleId()
+                   ? 'E-EDU PRO'
+                   : getParam('etablissement_nom', 'E-EDU PRO');
+    $sidebarSlogan = isSuperAdmin() && !getEcoleId()
+                   ? 'Plateforme multi-établissements'
+                   : getParam('etablissement_slogan', '');
+  ?>
   <a href="<?= APP_URL ?>/dashboard.php" class="sidebar-brand">
-    <?php if ($sidebarLogo): ?>
+    <?php if ($sidebarLogo && getEcoleId()): ?>
       <img src="<?= h($sidebarLogo) ?>" alt="Logo"
            style="width:38px;height:38px;object-fit:contain;border-radius:8px;background:#fff;padding:3px;flex-shrink:0">
+    <?php elseif (isSuperAdmin()): ?>
+      <div class="brand-icon" style="background:linear-gradient(135deg,#6200ea,#9c27b0)"><i class="fas fa-crown"></i></div>
     <?php else: ?>
-      <div class="brand-icon"><i class="fas fa-hospital"></i></div>
+      <div class="brand-icon"><i class="fas fa-school"></i></div>
     <?php endif; ?>
     <div class="brand-text">
       <strong><?= h(mb_strtoupper(mb_substr($sidebarNom, 0, 20))) ?></strong>
-      <small><?= h(getParam('etablissement_slogan', 'École Privée de Santé Ibn Rochd')) ?></small>
+      <small><?= h($sidebarSlogan) ?></small>
     </div>
   </a>
+
+  <!-- Contexte école (superadmin) -->
+  <?php if (isSuperAdmin()): ?>
+  <div style="padding:.25rem .75rem;margin:0 .5rem .25rem;">
+    <?php $ecoleCtx = getCurrentEcole(); ?>
+    <?php if ($ecoleCtx): ?>
+    <div style="background:#6200ea22;border:1px solid #6200ea44;border-radius:8px;padding:.4rem .7rem;font-size:.72rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem">
+      <span style="color:#9c27b0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+        <i class="fas fa-school me-1"></i><?= h($ecoleCtx['nom']) ?>
+      </span>
+      <a href="<?= APP_URL ?>/modules/superadmin/switch_ecole.php?id=0&csrf=<?= h(generateCsrfToken()) ?>"
+         style="color:#c62828;font-size:.68rem;white-space:nowrap" title="Quitter cette école">
+        <i class="fas fa-times"></i>
+      </a>
+    </div>
+    <?php else: ?>
+    <div style="background:#6200ea11;border:1px dashed #6200ea44;border-radius:8px;padding:.4rem .7rem;font-size:.72rem;color:#9e9e9e;text-align:center">
+      <i class="fas fa-globe me-1"></i>Vue globale
+    </div>
+    <?php endif; ?>
+  </div>
+  <?php endif; ?>
 
   <!-- Role badge -->
   <div style="padding:.5rem 1rem .25rem;margin:0 .5rem;">
@@ -91,8 +124,35 @@ HTML;
       <i class="fas fa-tachometer-alt"></i> Tableau de bord
     </a>
 
+    <!-- ===== SUPERADMIN ===== -->
+    <?php if ($role === 'superadmin'): ?>
+
+    <?= sidebarGroup('sa-ecoles', 'Établissements', 'fa-school',
+        ['/superadmin/'],
+        '<a href="' . APP_URL . '/modules/superadmin/index.php" class="nav-link' . isActive('/superadmin/index') . '"><i class="fas fa-list"></i> Toutes les écoles</a>'
+      . '<a href="' . APP_URL . '/modules/superadmin/ecole_form.php" class="nav-link' . isActive('/superadmin/ecole_form') . '"><i class="fas fa-plus"></i> Nouvelle école</a>'
+    ) ?>
+
+    <?php if (getEcoleId()): // SuperAdmin with school context — show school menus ?>
+
+    <?= sidebarGroup('sa-admin', 'Administration école', 'fa-cogs',
+        ['/administration/'],
+        '<a href="' . APP_URL . '/modules/administration/filieres.php" class="nav-link' . isActive('/administration/filieres') . '"><i class="fas fa-layer-group"></i> Filières &amp; Niveaux</a>'
+      . '<a href="' . APP_URL . '/modules/administration/annees.php" class="nav-link' . isActive('/administration/annees') . '"><i class="fas fa-calendar-alt"></i> Années académiques</a>'
+      . '<a href="' . APP_URL . '/modules/administration/utilisateurs.php" class="nav-link' . isActive('/administration/utilisateurs') . '"><i class="fas fa-users-cog"></i> Utilisateurs</a>'
+      . '<a href="' . APP_URL . '/modules/administration/parametres.php" class="nav-link' . isActive('/administration/parametres') . '"><i class="fas fa-cog"></i> Paramètres école</a>'
+    ) ?>
+
+    <?= sidebarGroup('sa-etudiants', 'Apprenants', 'fa-user-graduate',
+        ['/etudiants/'],
+        '<a href="' . APP_URL . '/modules/etudiants/index.php" class="nav-link' . isActive('/etudiants/index') . '"><i class="fas fa-user-graduate"></i> Liste des étudiants</a>'
+      . '<a href="' . APP_URL . '/modules/etudiants/add.php" class="nav-link' . isActive('/etudiants/add') . '"><i class="fas fa-user-plus"></i> Nouvel étudiant</a>'
+    ) ?>
+
+    <?php endif; // end school context ?>
+
     <!-- ===== ADMIN ===== -->
-    <?php if ($role === 'admin'): ?>
+    <?php elseif ($role === 'admin'): ?>
 
     <?= sidebarGroup('admin-admin', 'Administration', 'fa-cogs',
         ['/administration/'],
@@ -282,7 +342,7 @@ HTML;
       <i class="fas fa-sign-out-alt"></i> Déconnexion
     </a>
     <div style="font-size:.65rem;color:rgba(255,255,255,.3);margin-top:.5rem;padding:0 .4rem;">
-      EPSI v1.0 &copy; <?= date('Y') ?>
+      EDUPRO v2.0 &copy; <?= date('Y') ?>
     </div>
   </div>
 </nav>

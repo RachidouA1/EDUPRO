@@ -1,14 +1,15 @@
 <?php
 require_once __DIR__ . '/../../config/config.php';
 requireLogin();
-requireRole('admin');
+requireRole(['admin', 'superadmin']);
 
-$db     = getDB();
-$errors = [];
-$user   = getCurrentUser();
+$db      = getDB();
+$errors  = [];
+$user    = getCurrentUser();
+$ecoleId = getEcoleId();
 
-// Inline migration: ensure all roles including assistante are in the ENUM
-try { $db->exec("ALTER TABLE users MODIFY COLUMN role ENUM('admin','directeur','scolarite','enseignant','comptable','coordinateur','assistante') NOT NULL DEFAULT 'enseignant'"); } catch (PDOException $e) {}
+// Inline migration: ensure all roles including superadmin and assistante are in the ENUM
+try { $db->exec("ALTER TABLE users MODIFY COLUMN role ENUM('superadmin','admin','directeur','scolarite','enseignant','comptable','etudiant','coordinateur','assistante') NOT NULL DEFAULT 'enseignant'"); } catch (PDOException $e) {}
 
 $filieres = getFilieres();
 
@@ -38,7 +39,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $nom       = sanitize($_POST['nom']    ?? '');
         $prenom    = sanitize($_POST['prenom'] ?? '');
         $email     = filter_var($_POST['email'] ?? '', FILTER_SANITIZE_EMAIL);
-        $role   = in_array($_POST['role'] ?? '', ['admin','directeur','scolarite','enseignant','comptable','coordinateur','assistante']) ? $_POST['role'] : 'enseignant';
+        $allowedRoles = ['admin','directeur','scolarite','enseignant','comptable','coordinateur','assistante'];
+        $role = in_array($_POST['role'] ?? '', $allowedRoles) ? $_POST['role'] : 'enseignant';
         $pwd    = $_POST['password'] ?? '';
         $editId = (int)($_POST['edit_id'] ?? 0);
 
@@ -60,8 +62,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (empty($pwd)) $errors[] = 'Mot de passe obligatoire pour un nouvel utilisateur.';
                 if (empty($errors)) {
                     try {
-                        $db->prepare("INSERT INTO users (nom,prenom,email,password,role,actif) VALUES (?,?,?,?,?,1)")
-                           ->execute([$nom, $prenom, $email, password_hash($pwd, PASSWORD_DEFAULT), $role]);
+                        if ($ecoleId > 0) {
+                            $db->prepare("INSERT INTO users (nom,prenom,email,password,role,ecole_id,actif) VALUES (?,?,?,?,?,?,1)")
+                               ->execute([$nom, $prenom, $email, password_hash($pwd, PASSWORD_DEFAULT), $role, $ecoleId]);
+                        } else {
+                            $db->prepare("INSERT INTO users (nom,prenom,email,password,role,actif) VALUES (?,?,?,?,?,1)")
+                               ->execute([$nom, $prenom, $email, password_hash($pwd, PASSWORD_DEFAULT), $role]);
+                        }
                         setFlash('success', 'Utilisateur créé. Assignez les sections si c\'est un coordinateur.');
                     } catch (PDOException $e) {
                         $errors[] = 'Cet email est déjà utilisé.';
@@ -73,7 +80,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$users = $db->query("SELECT * FROM users ORDER BY role, nom, prenom")->fetchAll();
+try {
+    if ($ecoleId > 0) {
+        $stmt = $db->prepare("SELECT * FROM users WHERE ecole_id = ? ORDER BY role, nom, prenom");
+        $stmt->execute([$ecoleId]);
+    } else {
+        $stmt = $db->query("SELECT * FROM users ORDER BY role, nom, prenom");
+    }
+    $users = $stmt->fetchAll();
+} catch (PDOException $e) {
+    $users = $db->query("SELECT * FROM users ORDER BY role, nom, prenom")->fetchAll();
+}
 
 $pageTitle  = 'Utilisateurs';
 $breadcrumb = ['Administration' => null, 'Utilisateurs' => null];

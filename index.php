@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Connexion – EPSI</title>
+  <title>Connexion – E-EDU PRO</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -34,10 +34,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body class="login-page">
 
 <div class="login-card">
-  <h2 class="text-center fw-bold mb-1" style="color:#0f2d5c">EPSI</h2>
+  <div class="text-center mb-3">
+    <i class="fas fa-graduation-cap" style="font-size:2.5rem;color:#1a73e8"></i>
+  </div>
+  <h2 class="text-center fw-bold mb-1" style="color:#0f2d5c">E-EDU PRO</h2>
   <p class="text-center text-muted mb-4" style="font-size:.88rem">
-    École Privée de Santé Ibn Rochd<br>
-    <small>Système de Gestion Scolaire</small>
+    Plateforme de Gestion Scolaire<br>
+    <small>Multi-établissements</small>
   </p>
 
   <?php if ($error): ?>

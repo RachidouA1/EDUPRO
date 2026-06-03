@@ -3,8 +3,8 @@ require_once __DIR__ . '/../../config/config.php';
 requireLogin();
 requireRole(['admin', 'scolarite', 'directeur', 'enseignant', 'comptable', 'coordinateur']);
 
-$db = getDB();
-
+$db      = getDB();
+$ecoleId = getEcoleId();
 $isCoord = hasRole('coordinateur');
 
 // Filters
@@ -16,8 +16,8 @@ $statut    = sanitize($_GET['statut']   ?? '');
 $sexe      = sanitize($_GET['sexe']     ?? '');
 
 // Build query
-$where  = ['1=1'];
-$params = [];
+$where  = $ecoleId > 0 ? ['e.ecole_id = ?'] : ['1=1'];
+$params = $ecoleId > 0 ? [$ecoleId] : [];
 
 if ($isCoord) {
     $where[] = coordSectionWhere('e', $params);
