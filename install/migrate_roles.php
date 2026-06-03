@@ -1,13 +1,13 @@
 <?php
 /**
  * EPSI – Migration : nouveaux rôles utilisateurs
- * Accéder via : http://localhost/SCO-EPSI/install/migrate_roles.php
+ * Accéder via : http://localhost/EDUPRO/install/migrate_roles.php
  */
 
 define('DB_HOST', 'localhost');
 define('DB_USER', 'root');
 define('DB_PASS', '');
-define('DB_NAME', 'epsi_db');
+define('DB_NAME', 'edupro');
 
 $messages = [];
 $errors   = [];

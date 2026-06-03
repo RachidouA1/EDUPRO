@@ -1,7 +1,7 @@
 <?php
 /**
  * Migration : transfert des données depuis gestion_sante_tmp vers epsi_db
- * Exécuter via : http://localhost/SCO-EPSI/install/migrate_import_gestion_sante.php
+ * Exécuter via : http://localhost/EDUPRO/install/migrate_import_gestion_sante.php
  *
  * Prérequis : avoir importé gestion_ecole_sante.sql dans la base gestion_sante_tmp
  *   mysql -u root gestion_sante_tmp < "C:/Users/HP/Downloads/gestion_ecole_sante/gestion_ecole_sante.sql"

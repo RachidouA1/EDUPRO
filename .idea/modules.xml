@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/SCO-EPSI.iml" filepath="$PROJECT_DIR$/.idea/SCO-EPSI.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/EDUPRO.iml" filepath="$PROJECT_DIR$/.idea/EDUPRO.iml" />
     </modules>
   </component>
 </project>

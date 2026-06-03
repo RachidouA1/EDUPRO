@@ -1,4 +1,4 @@
-/* ===== EPSI App JS ===== */
+/* ===== EDUPRO App JS ===== */
 'use strict';
 
 // L'état actif des liens est géré côté serveur (sidebar.php) — aucune logique JS nécessaire ici.

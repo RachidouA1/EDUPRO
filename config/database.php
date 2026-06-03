@@ -1,6 +1,6 @@
 <?php
 define('DB_HOST', 'localhost');
-define('DB_NAME', 'epsi_db');
+define('DB_NAME', 'edupro');
 define('DB_USER', 'root');
 define('DB_PASS', '');
 define('DB_CHARSET', 'utf8mb4');
@@ -19,7 +19,7 @@ function getDB(): PDO {
             die('<div style="padding:2rem;font-family:sans-serif;background:#fff3f3;color:#c0392b;border-left:4px solid #c0392b;margin:2rem auto;max-width:600px;border-radius:8px">
                 <h3 style="margin:0 0 1rem">Erreur de connexion à la base de données</h3>
                 <p>' . htmlspecialchars($e->getMessage()) . '</p>
-                <p><a href="/SCO-EPSI/install/setup.php" style="color:#c0392b">Cliquez ici pour installer la base de données</a></p>
+                <p><a href="/EDUPRO/install/setup.php" style="color:#c0392b">Cliquez ici pour installer la base de données</a></p>
             </div>');
         }
     }

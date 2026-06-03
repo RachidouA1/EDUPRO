@@ -1,15 +1,15 @@
-# CLAUDE.md — SCO-EPSI
+# CLAUDE.md — E-EDU PRO
 
 ## Propriétaire du projet
-**Rachidou** — Développeur principal du projet SCO-EPSI.
+**Rachidou** — Développeur principal du projet E-EDU PRO.
 
 ---
 
 ## Présentation du projet
 
-**SCO-EPSI** est un système de gestion scolaire web destiné à l'**École Privée de Santé Ibn Rochd (EPSI)**, située à **Tahoua**, région de Tahoua, **Niger**. Il couvre la gestion des étudiants, des enseignants, des notes, des bulletins, de la comptabilité et de l'administration.
+**E-EDU PRO** est une application de gestion scolaire web destinée aux **écoles professionnelles**, située à **Tahoua**, région de Tahoua, **Niger**. Elle couvre la gestion des étudiants, des enseignants, des notes, des bulletins, de la comptabilité et de l'administration.
 
-- Base URL locale : `http://localhost/SCO-EPSI`
+- Base URL locale : `http://localhost/EDUPRO`
 - Point d'entrée : `index.php` (login) → `dashboard.php`
 - Installation BDD : `install/setup.php`
 
@@ -19,7 +19,7 @@
 
 ### Backend
 - **Langage** : PHP (procédural, sans framework)
-- **Base de données** : MySQL — base `epsi_db`
+- **Base de données** : MySQL — base `edupro`
 - **Accès BDD** : PDO (configuré dans `config/database.php`)
 - **Auth** : Sessions PHP + hachage de mots de passe + tokens CSRF
 
@@ -54,7 +54,7 @@
 ## Structure du projet
 
 ```
-SCO-EPSI/
+E-EDU PRO/
 ├── api/              # Endpoints AJAX (niveaux, semestres, recherche étudiants)
 ├── assets/           # CSS (style.css) et JS (app.js) personnalisés
 ├── config/           # config.php (constantes, session) + database.php (PDO)
@@ -96,5 +96,5 @@ SCO-EPSI/
 
 ## Base de données
 
-- **Nom** : `epsi_db`
+- **Nom** : `edupro`
 - **Tables principales** : `users`, `etudiants`, `enseignants`, `filieres`, `niveaux`, `semestres`, `annees_academiques`, `notes`, `paiements_etudiants`, `recettes`, `depenses`, `matieres`, `bulletins`

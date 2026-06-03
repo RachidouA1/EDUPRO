@@ -1,13 +1,13 @@
 <?php
 /**
  * EPSI – Script d'installation de la base de données
- * Accéder via : http://localhost/SCO-EPSI/install/setup.php
+ * Accéder via : http://localhost/EDUPRO/install/setup.php
  */
 
 define('DB_HOST', 'localhost');
 define('DB_USER', 'root');
 define('DB_PASS', '');
-define('DB_NAME', 'epsi_db');
+define('DB_NAME', 'edupro');
 
 $errors   = [];
 $messages = [];
