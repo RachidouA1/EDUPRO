@@ -7,8 +7,8 @@ $db     = getDB();
 $errors = [];
 $user   = getCurrentUser();
 
-// Inline migration: ensure coordinateur is in the ENUM (etudiant role removed)
-try { $db->exec("ALTER TABLE users MODIFY COLUMN role ENUM('admin','directeur','scolarite','enseignant','comptable','coordinateur') NOT NULL DEFAULT 'enseignant'"); } catch (PDOException $e) {}
+// Inline migration: ensure all roles including assistante are in the ENUM
+try { $db->exec("ALTER TABLE users MODIFY COLUMN role ENUM('admin','directeur','scolarite','enseignant','comptable','coordinateur','assistante') NOT NULL DEFAULT 'enseignant'"); } catch (PDOException $e) {}
 
 $filieres = getFilieres();
 
@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $nom       = sanitize($_POST['nom']    ?? '');
         $prenom    = sanitize($_POST['prenom'] ?? '');
         $email     = filter_var($_POST['email'] ?? '', FILTER_SANITIZE_EMAIL);
-        $role   = in_array($_POST['role'] ?? '', ['admin','directeur','scolarite','enseignant','comptable','coordinateur']) ? $_POST['role'] : 'enseignant';
+        $role   = in_array($_POST['role'] ?? '', ['admin','directeur','scolarite','enseignant','comptable','coordinateur','assistante']) ? $_POST['role'] : 'enseignant';
         $pwd    = $_POST['password'] ?? '';
         $editId = (int)($_POST['edit_id'] ?? 0);
 
@@ -92,7 +92,7 @@ include APP_ROOT . '/includes/header.php';
 <!-- Stats -->
 <div class="row g-3 mb-4">
   <?php
-    $counts = ['admin'=>0,'directeur'=>0,'scolarite'=>0,'enseignant'=>0,'comptable'=>0,'coordinateur'=>0];
+    $counts = ['admin'=>0,'directeur'=>0,'scolarite'=>0,'enseignant'=>0,'comptable'=>0,'coordinateur'=>0,'assistante'=>0];
     foreach ($users as $u) if (isset($counts[$u['role']])) $counts[$u['role']]++;
   ?>
   <div class="col-6 col-md-2"><div class="stat-card stat-blue"><div class="stat-icon" style="font-size:1rem"><i class="fas fa-user-shield"></i></div><div class="stat-body"><div class="stat-value"><?= $counts['admin'] ?></div><div class="stat-label" style="font-size:.7rem">Admin</div></div></div></div>
@@ -101,6 +101,9 @@ include APP_ROOT . '/includes/header.php';
   <div class="col-6 col-md-2"><div class="stat-card stat-green"><div class="stat-icon" style="font-size:1rem"><i class="fas fa-chalkboard-teacher"></i></div><div class="stat-body"><div class="stat-value"><?= $counts['enseignant'] ?></div><div class="stat-label" style="font-size:.7rem">Enseignant</div></div></div></div>
   <div class="col-6 col-md-2"><div class="stat-card stat-orange"><div class="stat-icon" style="font-size:1rem"><i class="fas fa-calculator"></i></div><div class="stat-body"><div class="stat-value"><?= $counts['comptable'] ?></div><div class="stat-label" style="font-size:.7rem">Comptable</div></div></div></div>
   <div class="col-6 col-md-2"><div class="stat-card stat-dark" style="background:linear-gradient(135deg,#1b5e20,#2e7d32)"><div class="stat-icon" style="font-size:1rem"><i class="fas fa-sitemap"></i></div><div class="stat-body"><div class="stat-value"><?= $counts['coordinateur'] ?></div><div class="stat-label" style="font-size:.7rem">Coordinateur</div></div></div></div>
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3"><div class="stat-card" style="background:linear-gradient(135deg,#922b21,#c0392b)"><div class="stat-icon" style="font-size:1rem"><i class="fas fa-envelope-open-text" style="color:#fff"></i></div><div class="stat-body"><div class="stat-value" style="color:#fff"><?= $counts['assistante'] ?></div><div class="stat-label" style="font-size:.7rem;color:rgba(255,255,255,.8)">Assistante Dir.</div></div></div></div>
 </div>
 
 <div class="card">
@@ -114,7 +117,7 @@ include APP_ROOT . '/includes/header.php';
           <td class="text-muted fs-sm"><?= $i+1 ?></td>
           <td>
             <div class="d-flex align-items-center gap-2">
-              <div class="avatar-circle" style="background:<?= ['admin'=>'#0f2d5c','directeur'=>'#5c35a0','scolarite'=>'#0097a7','enseignant'=>'#34a853','comptable'=>'#f57c00','coordinateur'=>'#2e7d32'][$u['role']] ?? '#aaa' ?>;width:34px;height:34px;font-size:.75rem">
+              <div class="avatar-circle" style="background:<?= ['admin'=>'#0f2d5c','directeur'=>'#5c35a0','scolarite'=>'#0097a7','enseignant'=>'#34a853','comptable'=>'#f57c00','coordinateur'=>'#2e7d32','assistante'=>'#c0392b'][$u['role']] ?? '#aaa' ?>;width:34px;height:34px;font-size:.75rem">
                 <?= strtoupper(substr($u['prenom'],0,1).substr($u['nom'],0,1)) ?>
               </div>
               <div>
@@ -125,9 +128,9 @@ include APP_ROOT . '/includes/header.php';
           <td><?= h($u['email']) ?></td>
           <td>
             <?php
-              $rc = ['admin'=>'primary','directeur'=>'purple','scolarite'=>'info','enseignant'=>'success','comptable'=>'warning','coordinateur'=>'coord'][$u['role']] ?? 'secondary';
-              $rl = ['admin'=>'Admin','directeur'=>'Directeur','scolarite'=>'Scolarité','enseignant'=>'Enseignant','comptable'=>'Comptable','coordinateur'=>'Coordinateur'][$u['role']] ?? $u['role'];
-              $badgeBg = $rc === 'purple' ? 'style="background:#5c35a0;color:#fff"' : ($rc === 'coord' ? 'style="background:#2e7d32;color:#fff"' : '');
+              $rc = ['admin'=>'primary','directeur'=>'purple','scolarite'=>'info','enseignant'=>'success','comptable'=>'warning','coordinateur'=>'coord','assistante'=>'ast'][$u['role']] ?? 'secondary';
+              $rl = ['admin'=>'Admin','directeur'=>'Directeur','scolarite'=>'Scolarité','enseignant'=>'Enseignant','comptable'=>'Comptable','coordinateur'=>'Coordinateur','assistante'=>'Assistante Dir.'][$u['role']] ?? $u['role'];
+              $badgeBg = $rc === 'purple' ? 'style="background:#5c35a0;color:#fff"' : ($rc === 'coord' ? 'style="background:#2e7d32;color:#fff"' : ($rc === 'ast' ? 'style="background:#c0392b;color:#fff"' : ''));
             ?>
             <span class="badge bg-<?= $rc ?>" <?= $badgeBg ?>><?= $rl ?></span>
             <?php if ($u['role'] === 'coordinateur'): ?>
@@ -185,6 +188,7 @@ include APP_ROOT . '/includes/header.php';
                 <option value="scolarite">Scolarité</option>
                 <option value="comptable">Comptable</option>
                 <option value="coordinateur">Coordinateur de section</option>
+                <option value="assistante">Assistante de Direction</option>
                 <option value="directeur">Directeur</option>
                 <option value="admin">Administrateur</option>
               </select>

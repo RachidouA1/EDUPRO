@@ -5,7 +5,7 @@ requireRole('admin');
 
 $db = getDB();
 
-// Migration inline : créer la table si absente
+// Migration inline
 try {
     $db->exec("CREATE TABLE IF NOT EXISTS parametres (
         id INT PRIMARY KEY AUTO_INCREMENT,
@@ -13,35 +13,45 @@ try {
         valeur TEXT,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     )");
-    // Insérer les valeurs par défaut manquantes
     $defaults = [
         ['etablissement_nom',       'École Privée de Santé Ibn Rochd'],
         ['etablissement_slogan',    'Excellence – Santé – Service'],
-        ['etablissement_adresse',   'Dakar, Sénégal'],
+        ['etablissement_adresse',   'Tahoua, Niger'],
+        ['etablissement_ville',     'Tahoua'],
+        ['etablissement_pays',      'Niger'],
         ['etablissement_telephone', ''],
         ['etablissement_email',     ''],
         ['theme_couleur_primaire',  '#1a73e8'],
         ['theme_couleur_sidebar',   '#0f2d5c'],
         ['logo_path',               ''],
+        ['cachet_dg_path',          ''],
     ];
     $ins = $db->prepare("INSERT IGNORE INTO parametres (cle, valeur) VALUES (?,?)");
     foreach ($defaults as $d) $ins->execute($d);
 } catch (PDOException $e) {}
 
 $errors  = [];
-$success = false;
 
 // ─── Suppression du logo ──────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_logo'])) {
-    if (!verifyCsrfToken($_POST['csrf'] ?? '')) {
-        $errors[] = 'Jeton de sécurité invalide.';
-    } else {
+    if (!verifyCsrfToken($_POST['csrf'] ?? '')) { $errors[] = 'Jeton invalide.'; }
+    else {
         $old = getParam('logo_path');
-        if ($old && file_exists(APP_ROOT . '/assets/' . $old)) {
-            unlink(APP_ROOT . '/assets/' . $old);
-        }
+        if ($old && file_exists(APP_ROOT . '/assets/' . $old)) unlink(APP_ROOT . '/assets/' . $old);
         setParam('logo_path', '');
         setFlash('success', 'Logo supprimé.');
+        redirect('/modules/administration/parametres.php');
+    }
+}
+
+// ─── Suppression cachet DG ───────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_cachet'])) {
+    if (!verifyCsrfToken($_POST['csrf'] ?? '')) { $errors[] = 'Jeton invalide.'; }
+    else {
+        $old = getParam('cachet_dg_path');
+        if ($old && file_exists(APP_ROOT . '/assets/' . $old)) unlink(APP_ROOT . '/assets/' . $old);
+        setParam('cachet_dg_path', '');
+        setFlash('success', 'Cachet / signature supprimé.');
         redirect('/modules/administration/parametres.php');
     }
 }
@@ -51,15 +61,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_params'])) {
     if (!verifyCsrfToken($_POST['csrf'] ?? '')) {
         $errors[] = 'Jeton de sécurité invalide.';
     } else {
-
-        // Informations établissement
         setParam('etablissement_nom',       sanitize($_POST['etablissement_nom']       ?? ''));
         setParam('etablissement_slogan',    sanitize($_POST['etablissement_slogan']    ?? ''));
         setParam('etablissement_adresse',   sanitize($_POST['etablissement_adresse']   ?? ''));
+        setParam('etablissement_ville',     sanitize($_POST['etablissement_ville']     ?? ''));
+        setParam('etablissement_pays',      sanitize($_POST['etablissement_pays']      ?? ''));
         setParam('etablissement_telephone', sanitize($_POST['etablissement_telephone'] ?? ''));
         setParam('etablissement_email',     sanitize($_POST['etablissement_email']     ?? ''));
 
-        // Couleurs (validation format hex)
         $primary = preg_match('/^#[0-9A-Fa-f]{6}$/', $_POST['theme_couleur_primaire'] ?? '') ? $_POST['theme_couleur_primaire'] : '#1a73e8';
         $sidebar = preg_match('/^#[0-9A-Fa-f]{6}$/', $_POST['theme_couleur_sidebar']  ?? '') ? $_POST['theme_couleur_sidebar']  : '#0f2d5c';
         setParam('theme_couleur_primaire', $primary);
@@ -68,31 +77,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_params'])) {
         // Upload logo
         if (!empty($_FILES['logo']['name'])) {
             $file    = $_FILES['logo'];
-            $allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
-            $maxSize = 2 * 1024 * 1024;
-
+            $allowed = ['image/jpeg','image/png','image/gif','image/webp','image/svg+xml'];
             if ($file['error'] !== UPLOAD_ERR_OK) {
-                $errors[] = 'Erreur lors de l\'upload du fichier.';
-            } elseif ($file['size'] > $maxSize) {
-                $errors[] = 'Le fichier est trop volumineux (max 2 Mo).';
+                $errors[] = 'Erreur lors de l\'upload du logo.';
+            } elseif ($file['size'] > 2 * 1024 * 1024) {
+                $errors[] = 'Logo trop volumineux (max 2 Mo).';
             } else {
                 $mime = (new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']);
                 if (!in_array($mime, $allowed)) {
-                    $errors[] = 'Format non autorisé. Utilisez JPG, PNG, GIF, WebP ou SVG.';
+                    $errors[] = 'Format logo non autorisé.';
                 } else {
                     $uploadDir = APP_ROOT . '/assets/uploads/';
                     if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
-
-                    // Supprimer l'ancien logo
                     $old = getParam('logo_path');
-                    if ($old && file_exists(APP_ROOT . '/assets/' . $old)) {
-                        unlink(APP_ROOT . '/assets/' . $old);
-                    }
-
+                    if ($old && file_exists(APP_ROOT . '/assets/' . $old)) unlink(APP_ROOT . '/assets/' . $old);
                     $ext  = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-                    $name = 'logo.' . $ext;
-                    move_uploaded_file($file['tmp_name'], $uploadDir . $name);
-                    setParam('logo_path', 'uploads/' . $name);
+                    move_uploaded_file($file['tmp_name'], $uploadDir . 'logo.' . $ext);
+                    setParam('logo_path', 'uploads/logo.' . $ext);
+                }
+            }
+        }
+
+        // Upload cachet / signature DG
+        if (!empty($_FILES['cachet_dg']['name'])) {
+            $file    = $_FILES['cachet_dg'];
+            $allowed = ['image/jpeg','image/png','image/gif','image/webp'];
+            if ($file['error'] !== UPLOAD_ERR_OK) {
+                $errors[] = 'Erreur lors de l\'upload du cachet.';
+            } elseif ($file['size'] > 3 * 1024 * 1024) {
+                $errors[] = 'Image cachet trop volumineuse (max 3 Mo).';
+            } else {
+                $mime = (new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']);
+                if (!in_array($mime, $allowed)) {
+                    $errors[] = 'Format cachet non autorisé (JPG, PNG, GIF, WEBP).';
+                } else {
+                    $uploadDir = APP_ROOT . '/assets/uploads/';
+                    if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
+                    $old = getParam('cachet_dg_path');
+                    if ($old && file_exists(APP_ROOT . '/assets/' . $old)) unlink(APP_ROOT . '/assets/' . $old);
+                    $ext  = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+                    move_uploaded_file($file['tmp_name'], $uploadDir . 'cachet_dg.' . $ext);
+                    setParam('cachet_dg_path', 'uploads/cachet_dg.' . $ext);
                 }
             }
         }
@@ -104,7 +129,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_params'])) {
     }
 }
 
-$logoUrl = getLogoUrl();
+$logoUrl    = getLogoUrl();
+$cachetPath = getParam('cachet_dg_path');
+$cachetUrl  = ($cachetPath && file_exists(APP_ROOT . '/assets/' . $cachetPath))
+              ? APP_URL . '/assets/' . $cachetPath . '?v=' . time()
+              : '';
 
 $pageTitle  = 'Paramètres';
 $breadcrumb = ['Administration' => null, 'Paramètres' => null];
@@ -147,9 +176,21 @@ include APP_ROOT . '/includes/header.php';
                      value="<?= h(getParam('etablissement_slogan')) ?>">
             </div>
             <div class="col-12">
-              <label class="form-label fw-600">Adresse</label>
+              <label class="form-label fw-600">Adresse complète</label>
               <input type="text" name="etablissement_adresse" class="form-control"
-                     value="<?= h(getParam('etablissement_adresse', 'Dakar, Sénégal')) ?>">
+                     value="<?= h(getParam('etablissement_adresse', 'Tahoua, Niger')) ?>">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-600">Ville</label>
+              <input type="text" name="etablissement_ville" class="form-control"
+                     placeholder="Tahoua"
+                     value="<?= h(getParam('etablissement_ville', 'Tahoua')) ?>">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-600">Pays</label>
+              <input type="text" name="etablissement_pays" class="form-control"
+                     placeholder="Niger"
+                     value="<?= h(getParam('etablissement_pays', 'Niger')) ?>">
             </div>
             <div class="col-md-6">
               <label class="form-label fw-600">Téléphone</label>
@@ -160,7 +201,7 @@ include APP_ROOT . '/includes/header.php';
             <div class="col-md-6">
               <label class="form-label fw-600">Email</label>
               <input type="email" name="etablissement_email" class="form-control"
-                     placeholder="contact@epsi.sn"
+                     placeholder="contact@epsi.ne"
                      value="<?= h(getParam('etablissement_email')) ?>">
             </div>
           </div>
@@ -222,9 +263,7 @@ include APP_ROOT . '/includes/header.php';
                 <button type="button" id="prev-btn-outline" class="btn" style="font-size:.85rem;background:transparent">
                   Voir plus
                 </button>
-                <span id="prev-badge" class="badge" style="font-size:.8rem;padding:.4rem .8rem;align-self:start">
-                  Actif
-                </span>
+                <span id="prev-badge" class="badge" style="font-size:.8rem;padding:.4rem .8rem;align-self:start">Actif</span>
               </div>
             </div>
           </div>
@@ -236,20 +275,16 @@ include APP_ROOT . '/includes/header.php';
     <div class="col-lg-5">
 
       <!-- Logo -->
-      <div class="card">
+      <div class="card mb-4">
         <div class="card-header">
           <i class="fas fa-image me-2 text-primary"></i>Logo de l'établissement
         </div>
         <div class="card-body">
-
-          <!-- Aperçu logo actuel -->
           <div class="mb-3 text-center">
             <?php if ($logoUrl): ?>
               <img src="<?= h($logoUrl) ?>?v=<?= time() ?>" alt="Logo actuel"
                    style="max-height:120px;max-width:240px;object-fit:contain;border:1px solid #dee2e6;border-radius:8px;padding:8px;background:#fff">
-              <div class="mt-2">
-                <span class="badge bg-success"><i class="fas fa-check me-1"></i>Logo défini</span>
-              </div>
+              <div class="mt-2"><span class="badge bg-success"><i class="fas fa-check me-1"></i>Logo défini</span></div>
             <?php else: ?>
               <div style="height:120px;width:240px;display:inline-flex;align-items:center;justify-content:center;background:#f8f9fa;border:2px dashed #dee2e6;border-radius:8px;margin:0 auto">
                 <div class="text-center text-muted">
@@ -259,24 +294,18 @@ include APP_ROOT . '/includes/header.php';
               </div>
             <?php endif; ?>
           </div>
-
-          <!-- Upload -->
           <div class="mb-3">
             <label class="form-label fw-600">Choisir un nouveau logo</label>
             <input type="file" name="logo" id="logoInput" class="form-control"
                    accept=".jpg,.jpeg,.png,.gif,.webp,.svg">
             <div class="form-text">JPG, PNG, GIF, WebP ou SVG — max 2 Mo</div>
           </div>
-
-          <!-- Prévisualisation avant upload -->
           <div id="logoPreviewWrap" class="mb-3 text-center" style="display:none">
-            <div class="text-muted mb-1" style="font-size:.78rem">Aperçu avant enregistrement :</div>
+            <div class="text-muted mb-1" style="font-size:.78rem">Aperçu :</div>
             <img id="logoPreviewImg" src="" alt="Aperçu"
                  style="max-height:100px;max-width:200px;object-fit:contain;border:1px solid #dee2e6;border-radius:8px;padding:6px;background:#fff">
           </div>
-
           <?php if ($logoUrl): ?>
-          <!-- Suppression logo -->
           <hr class="my-3">
           <form method="POST" class="d-inline" onsubmit="return confirm('Supprimer le logo ?')">
             <input type="hidden" name="csrf" value="<?= h(generateCsrfToken()) ?>">
@@ -286,17 +315,73 @@ include APP_ROOT . '/includes/header.php';
             </button>
           </form>
           <?php endif; ?>
-
-          <!-- Info logo utilisation -->
           <div class="alert alert-info py-2 mt-3 mb-0" style="font-size:.8rem">
             <i class="fas fa-info-circle me-1"></i>
-            Le logo apparaît dans la barre latérale, les bulletins, les PV et les reçus de paiement.
+            Apparaît dans la barre latérale, les bulletins, les PV, les reçus et les cartes scolaires.
+          </div>
+        </div>
+      </div>
+
+      <!-- Cachet & Signature DG -->
+      <div class="card mb-4">
+        <div class="card-header">
+          <i class="fas fa-stamp me-2 text-primary"></i>Cachet &amp; Signature du Directeur Général
+        </div>
+        <div class="card-body">
+
+          <!-- Aperçu actuel -->
+          <div class="mb-3 text-center">
+            <?php if ($cachetUrl): ?>
+              <img src="<?= h($cachetUrl) ?>" alt="Cachet DG"
+                   style="max-height:130px;max-width:250px;object-fit:contain;border:1px solid #dee2e6;border-radius:8px;padding:8px;background:#fff">
+              <div class="mt-2"><span class="badge bg-success"><i class="fas fa-check me-1"></i>Cachet défini</span></div>
+            <?php else: ?>
+              <div style="height:130px;width:250px;display:inline-flex;align-items:center;justify-content:center;background:#f8f9fa;border:2px dashed #dee2e6;border-radius:8px;margin:0 auto">
+                <div class="text-center text-muted">
+                  <i class="fas fa-stamp fa-2x mb-2 d-block" style="opacity:.4"></i>
+                  <small>Aucun cachet défini</small>
+                </div>
+              </div>
+            <?php endif; ?>
+          </div>
+
+          <!-- Upload -->
+          <div class="mb-3">
+            <label class="form-label fw-600">
+              <?= $cachetUrl ? 'Remplacer le cachet / signature' : 'Uploader le cachet / signature' ?>
+            </label>
+            <input type="file" name="cachet_dg" id="cachetInput" class="form-control"
+                   accept=".jpg,.jpeg,.png,.gif,.webp">
+            <div class="form-text">JPG, PNG, GIF, WebP — max 3 Mo. Préférez un fond transparent (PNG).</div>
+          </div>
+
+          <!-- Aperçu avant upload -->
+          <div id="cachetPreviewWrap" class="mb-3 text-center" style="display:none">
+            <div class="text-muted mb-1" style="font-size:.78rem">Aperçu :</div>
+            <img id="cachetPreviewImg" src="" alt="Aperçu"
+                 style="max-height:110px;max-width:220px;object-fit:contain;border:1px dashed #1a73e8;border-radius:8px;padding:6px;background:#fff">
+          </div>
+
+          <?php if ($cachetUrl): ?>
+          <hr class="my-3">
+          <form method="POST" class="d-inline" onsubmit="return confirm('Supprimer le cachet et la signature ?')">
+            <input type="hidden" name="csrf" value="<?= h(generateCsrfToken()) ?>">
+            <input type="hidden" name="delete_cachet" value="1">
+            <button type="submit" class="btn btn-outline-danger btn-sm w-100">
+              <i class="fas fa-trash me-2"></i>Supprimer le cachet / signature
+            </button>
+          </form>
+          <?php endif; ?>
+
+          <div class="alert alert-info py-2 mt-3 mb-0" style="font-size:.8rem">
+            <i class="fas fa-info-circle me-1"></i>
+            Apparaît dans la zone de signature en bas de la carte d'identité scolaire.
           </div>
         </div>
       </div>
 
       <!-- Réinitialisation thème -->
-      <div class="card mt-4">
+      <div class="card">
         <div class="card-header"><i class="fas fa-undo me-2 text-warning"></i>Réinitialisation</div>
         <div class="card-body">
           <p class="text-muted" style="font-size:.85rem">Remettre les couleurs aux valeurs par défaut EPSI.</p>
@@ -319,25 +404,22 @@ include APP_ROOT . '/includes/header.php';
 </form>
 
 <script>
-// ─── Sync color picker ↔ hex input ──────────────────────────────────────────
 function syncColor(pickerId, hexId) {
   const picker = document.getElementById(pickerId);
   const hex    = document.getElementById(hexId);
   picker.addEventListener('input', () => { hex.value = picker.value; updatePreview(); });
-  hex.addEventListener('input', () => {
+  hex.addEventListener('input',   () => {
     if (/^#[0-9A-Fa-f]{6}$/.test(hex.value)) { picker.value = hex.value; updatePreview(); }
   });
 }
 syncColor('colorPrimaire', 'hexPrimaire');
 syncColor('colorSidebar',  'hexSidebar');
 
-// ─── Live preview ────────────────────────────────────────────────────────────
 function updatePreview() {
   const primary = document.getElementById('colorPrimaire').value;
   const sidebar = document.getElementById('colorSidebar').value;
-
-  document.getElementById('prev-sidebar').style.background = sidebar;
-  document.getElementById('prev-nav-item').style.background = primary;
+  document.getElementById('prev-sidebar').style.background       = sidebar;
+  document.getElementById('prev-nav-item').style.background      = primary;
   document.getElementById('prev-btn-primary').style.background   = primary;
   document.getElementById('prev-btn-primary').style.borderColor  = primary;
   document.getElementById('prev-btn-primary').style.color        = '#fff';
@@ -348,7 +430,6 @@ function updatePreview() {
 }
 updatePreview();
 
-// ─── Réinitialisation ────────────────────────────────────────────────────────
 document.getElementById('resetColorsBtn').addEventListener('click', () => {
   document.getElementById('colorPrimaire').value = '#1a73e8';
   document.getElementById('hexPrimaire').value   = '#1a73e8';
@@ -357,16 +438,26 @@ document.getElementById('resetColorsBtn').addEventListener('click', () => {
   updatePreview();
 });
 
-// ─── Prévisualisation logo avant upload ─────────────────────────────────────
+// Aperçu logo
 document.getElementById('logoInput').addEventListener('change', function () {
-  const file = this.files[0];
-  if (!file) return;
+  if (!this.files[0]) return;
   const reader = new FileReader();
   reader.onload = e => {
     document.getElementById('logoPreviewImg').src = e.target.result;
     document.getElementById('logoPreviewWrap').style.display = '';
   };
-  reader.readAsDataURL(file);
+  reader.readAsDataURL(this.files[0]);
+});
+
+// Aperçu cachet
+document.getElementById('cachetInput').addEventListener('change', function () {
+  if (!this.files[0]) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('cachetPreviewImg').src = e.target.result;
+    document.getElementById('cachetPreviewWrap').style.display = '';
+  };
+  reader.readAsDataURL(this.files[0]);
 });
 </script>
 

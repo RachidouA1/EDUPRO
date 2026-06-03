@@ -6,6 +6,9 @@ requireRole(['admin', 'scolarite', 'comptable']);
 $db = getDB();
 $errors = [];
 
+// Inline migration : colonne photo
+try { $db->exec("ALTER TABLE etudiants ADD COLUMN photo VARCHAR(255) DEFAULT NULL"); } catch (PDOException $e) {}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrfToken($_POST['csrf'] ?? '')) {
         $errors[] = 'Jeton de sécurité invalide.';
@@ -34,8 +37,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$data['niveau_id'])    $errors[] = 'Le niveau est obligatoire.';
         if (!$data['annee_id'])     $errors[] = 'L\'année académique est obligatoire.';
 
+        // Validation de la photo (si fournie)
+        $photoFile = $_FILES['photo'] ?? null;
+        $hasPhoto  = $photoFile && $photoFile['error'] !== UPLOAD_ERR_NO_FILE && !empty($photoFile['name']);
+        if ($hasPhoto) {
+            if ($photoFile['error'] !== UPLOAD_ERR_OK) {
+                $errors[] = 'Erreur lors de l\'envoi de la photo (code ' . $photoFile['error'] . ').';
+                $hasPhoto = false;
+            } elseif ($photoFile['size'] > 2 * 1024 * 1024) {
+                $errors[] = 'La photo ne doit pas dépasser 2 Mo.';
+                $hasPhoto = false;
+            } else {
+                $finfo    = new finfo(FILEINFO_MIME_TYPE);
+                $mimeType = $finfo->file($photoFile['tmp_name']);
+                if (!in_array($mimeType, ['image/jpeg','image/jpg','image/png','image/gif','image/webp'])) {
+                    $errors[] = 'Format de photo invalide. Acceptés : JPG, PNG, GIF, WEBP.';
+                    $hasPhoto = false;
+                }
+            }
+        }
+
         if (empty($errors)) {
             $matricule = generateMatricule('ETU');
+
+            // INSERT étudiant (sans photo d'abord)
             $stmt = $db->prepare("
                 INSERT INTO etudiants (matricule, nom, prenom, sexe, date_naissance, lieu_naissance,
                     telephone, email, adresse, nom_tuteur, telephone_tuteur,
@@ -59,13 +84,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             $newId = $db->lastInsertId();
 
-            // Créer le compte utilisateur étudiant (toujours, pour permettre la connexion par matricule)
+            // Sauvegarde de la photo
+            if ($hasPhoto) {
+                $ext       = strtolower(pathinfo($photoFile['name'], PATHINFO_EXTENSION));
+                $uploadDir = APP_ROOT . '/assets/uploads/etudiants/';
+                if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
+                $fileName  = 'etu_' . $newId . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+                if (move_uploaded_file($photoFile['tmp_name'], $uploadDir . $fileName)) {
+                    $db->prepare("UPDATE etudiants SET photo=? WHERE id=?")
+                       ->execute(['uploads/etudiants/' . $fileName, $newId]);
+                }
+            }
+
+            // Créer le compte utilisateur étudiant
             $userEmail = !empty($data['email']) ? $data['email'] : strtolower($matricule) . '@epsi.local';
             $tempPass  = password_hash('Etudiant@2025', PASSWORD_DEFAULT);
             $uStmt = $db->prepare("INSERT IGNORE INTO users (nom, prenom, email, password, role, reference_id) VALUES (?,?,?,?,'etudiant',?)");
             $uStmt->execute([$data['nom'], $data['prenom'], $userEmail, $tempPass, $newId]);
 
-            setFlash('success', "Étudiant {$data['prenom']} {$data['nom']} enregistré avec le matricule {$matricule}. Mot de passe par défaut : Etudiant@2025");
+            setFlash('success', "Étudiant {$data['prenom']} {$data['nom']} enregistré avec le matricule <strong>{$matricule}</strong>. Vous pouvez maintenant générer sa carte d'identité scolaire.");
             redirect('/modules/etudiants/view.php?id=' . $newId);
         }
     }
@@ -84,11 +121,11 @@ include APP_ROOT . '/includes/header.php';
   <h2><i class="fas fa-user-plus me-2 text-primary"></i>Enregistrer un étudiant</h2>
 </div>
 
-<form method="POST" novalidate>
+<form method="POST" enctype="multipart/form-data" novalidate>
   <input type="hidden" name="csrf" value="<?= h(generateCsrfToken()) ?>">
 
   <?php foreach ($errors as $err): ?>
-    <div class="alert alert-danger"><i class="fas fa-exclamation-circle me-2"></i><?= h($err) ?></div>
+    <div class="alert alert-danger"><i class="fas fa-exclamation-circle me-2"></i><?= $err ?></div>
   <?php endforeach; ?>
 
   <div class="row g-4">
@@ -156,8 +193,25 @@ include APP_ROOT . '/includes/header.php';
       </div>
     </div>
 
-    <!-- Scolarité -->
+    <!-- Scolarité + Photo -->
     <div class="col-lg-4">
+
+      <!-- Photo -->
+      <div class="card mb-4">
+        <div class="card-header"><i class="fas fa-camera me-2 text-primary"></i>Photo de l'étudiant</div>
+        <div class="card-body text-center">
+          <div id="photoPreviewWrap" style="margin-bottom:.75rem;display:none">
+            <img id="photoPreview" src="" alt="Aperçu"
+                 style="width:100px;height:120px;object-fit:cover;border-radius:8px;border:2px solid #dee2e6;box-shadow:0 2px 8px rgba(0,0,0,.1)">
+          </div>
+          <label class="form-label d-block">Photo (optionnelle)</label>
+          <input type="file" name="photo" id="photoInput" class="form-control form-control-sm"
+                 accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                 onchange="previewPhoto(this)">
+          <small class="text-muted d-block mt-1">JPG, PNG, WEBP — max 2 Mo</small>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-header"><i class="fas fa-graduation-cap me-2 text-primary"></i>Scolarité</div>
         <div class="card-body">
@@ -229,4 +283,21 @@ include APP_ROOT . '/includes/header.php';
   </div>
 </form>
 
-<?php include APP_ROOT . '/includes/footer.php'; ?>
+<?php
+$extraScripts = <<<'JS'
+<script>
+function previewPhoto(input) {
+    const wrap = document.getElementById('photoPreviewWrap');
+    const img  = document.getElementById('photoPreview');
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = e => { img.src = e.target.result; wrap.style.display = ''; };
+        reader.readAsDataURL(input.files[0]);
+    } else {
+        wrap.style.display = 'none';
+    }
+}
+</script>
+JS;
+include APP_ROOT . '/includes/footer.php';
+?>

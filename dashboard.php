@@ -109,6 +109,34 @@ if ($showRecentEtudiants) {
     ")->fetchAll();
 }
 
+// ===== Stats courriers (assistante de direction) =====
+if ($role === 'assistante') {
+    try {
+        $stats['depart_total']  = (int)$db->query("SELECT COUNT(*) FROM courriers_depart")->fetchColumn();
+        $stats['arrivee_total'] = (int)$db->query("SELECT COUNT(*) FROM courriers_arrivee")->fetchColumn();
+        $stats['depart_mois']   = (int)$db->query("SELECT COUNT(*) FROM courriers_depart WHERE MONTH(date_depart)=MONTH(NOW()) AND YEAR(date_depart)=YEAR(NOW())")->fetchColumn();
+        $stats['arrivee_mois']  = (int)$db->query("SELECT COUNT(*) FROM courriers_arrivee WHERE MONTH(date_arrivee)=MONTH(NOW()) AND YEAR(date_arrivee)=YEAR(NOW())")->fetchColumn();
+        $stats['sans_reponse']  = (int)$db->query("SELECT COUNT(*) FROM courriers_arrivee WHERE date_reponse IS NULL")->fetchColumn();
+
+        $recentDepart  = $db->query("SELECT * FROM courriers_depart ORDER BY date_depart DESC, id DESC LIMIT 5")->fetchAll();
+        $recentArrivee = $db->query("SELECT * FROM courriers_arrivee ORDER BY date_arrivee DESC, id DESC LIMIT 5")->fetchAll();
+
+        $courriersChart = [];
+        for ($i = 5; $i >= 0; $i--) {
+            $m = date('Y-m', strtotime("-$i months"));
+            [$yr, $mn] = explode('-', $m);
+            $d = $db->prepare("SELECT COUNT(*) FROM courriers_depart  WHERE YEAR(date_depart)=?  AND MONTH(date_depart)=?");
+            $d->execute([$yr, $mn]);
+            $a = $db->prepare("SELECT COUNT(*) FROM courriers_arrivee WHERE YEAR(date_arrivee)=? AND MONTH(date_arrivee)=?");
+            $a->execute([$yr, $mn]);
+            $courriersChart[] = ['mois' => date('M Y', mktime(0,0,0,(int)$mn,1,(int)$yr)), 'depart' => (int)$d->fetchColumn(), 'arrivee' => (int)$a->fetchColumn()];
+        }
+    } catch (PDOException $e) {
+        $stats['depart_total'] = $stats['arrivee_total'] = $stats['depart_mois'] = $stats['arrivee_mois'] = $stats['sans_reponse'] = 0;
+        $recentDepart = $recentArrivee = $courriersChart = [];
+    }
+}
+
 // ===== Données enseignant =====
 if ($role === 'enseignant') {
     $refId = (int)($user['reference_id'] ?? 0);
@@ -956,6 +984,176 @@ include APP_ROOT . '/includes/header.php';
   </div>
 </div>
 
+<?php elseif ($role === 'assistante'): /* ===== VUE ASSISTANTE DE DIRECTION ===== */ ?>
+
+<!-- Stat Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="stat-card" style="background:linear-gradient(135deg,#922b21,#c0392b)">
+      <div class="stat-icon"><i class="fas fa-paper-plane"></i></div>
+      <div class="stat-body">
+        <div class="stat-value"><?= $stats['depart_total'] ?></div>
+        <div class="stat-label">Courriers départ</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card stat-blue">
+      <div class="stat-icon"><i class="fas fa-inbox"></i></div>
+      <div class="stat-body">
+        <div class="stat-value"><?= $stats['arrivee_total'] ?></div>
+        <div class="stat-label">Courriers arrivée</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card stat-teal">
+      <div class="stat-icon"><i class="fas fa-calendar-day"></i></div>
+      <div class="stat-body">
+        <div class="stat-value"><?= $stats['depart_mois'] + $stats['arrivee_mois'] ?></div>
+        <div class="stat-label">Ce mois</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card stat-orange">
+      <div class="stat-icon"><i class="fas fa-clock"></i></div>
+      <div class="stat-body">
+        <div class="stat-value"><?= $stats['sans_reponse'] ?></div>
+        <div class="stat-label">Sans réponse</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Détail mois courant -->
+<div class="row g-3 mb-4">
+  <div class="col-12 col-md-6">
+    <div class="card" style="border-left:4px solid #c0392b">
+      <div class="card-body d-flex align-items-center justify-content-between">
+        <div>
+          <div class="text-muted fs-sm mb-1"><i class="fas fa-paper-plane me-1" style="color:#c0392b"></i>Départ ce mois</div>
+          <div style="font-size:2rem;font-weight:700;color:#c0392b;line-height:1"><?= $stats['depart_mois'] ?></div>
+        </div>
+        <a href="<?= APP_URL ?>/modules/courriers/depart.php" class="btn btn-sm btn-outline-danger">Gérer</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-md-6">
+    <div class="card" style="border-left:4px solid #1a73e8">
+      <div class="card-body d-flex align-items-center justify-content-between">
+        <div>
+          <div class="text-muted fs-sm mb-1"><i class="fas fa-inbox me-1" style="color:#1a73e8"></i>Arrivée ce mois</div>
+          <div style="font-size:2rem;font-weight:700;color:#1a73e8;line-height:1"><?= $stats['arrivee_mois'] ?></div>
+        </div>
+        <a href="<?= APP_URL ?>/modules/courriers/arrivee.php" class="btn btn-sm btn-outline-primary">Gérer</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Graphique + Accès rapide -->
+<div class="row g-3 mb-4">
+  <div class="col-12 col-lg-8">
+    <div class="card h-100">
+      <div class="card-header"><i class="fas fa-chart-bar me-2 text-primary"></i>Courriers par mois (6 derniers mois)</div>
+      <div class="card-body"><div class="chart-container"><canvas id="courriersChart"></canvas></div></div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-4">
+    <div class="card h-100">
+      <div class="card-header"><i class="fas fa-bolt me-2 text-warning"></i>Accès rapide</div>
+      <div class="card-body">
+        <div class="row g-2">
+          <div class="col-6">
+            <a href="<?= APP_URL ?>/modules/courriers/depart.php" class="btn btn-outline-danger w-100 text-start py-3">
+              <i class="fas fa-paper-plane d-block mb-1"></i><small>Courriers départ</small>
+            </a>
+          </div>
+          <div class="col-6">
+            <a href="<?= APP_URL ?>/modules/courriers/arrivee.php" class="btn btn-outline-primary w-100 text-start py-3">
+              <i class="fas fa-inbox d-block mb-1"></i><small>Courriers arrivée</small>
+            </a>
+          </div>
+          <div class="col-12">
+            <a href="<?= APP_URL ?>/modules/courriers/depart.php" class="btn btn-danger w-100 text-start py-3">
+              <i class="fas fa-plus me-2"></i><small>Nouveau courrier départ</small>
+            </a>
+          </div>
+          <div class="col-12">
+            <a href="<?= APP_URL ?>/modules/courriers/arrivee.php" class="btn btn-primary w-100 text-start py-3">
+              <i class="fas fa-plus me-2"></i><small>Nouveau courrier arrivée</small>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tableaux récents -->
+<div class="row g-3">
+  <div class="col-12 col-lg-6">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="fas fa-paper-plane me-2" style="color:#c0392b"></i>Derniers courriers départ</span>
+        <a href="<?= APP_URL ?>/modules/courriers/depart.php" class="btn btn-sm btn-outline-danger">Voir tout</a>
+      </div>
+      <div class="table-responsive">
+        <table class="table mb-0">
+          <thead><tr><th>Date</th><th>Destinataire</th><th>Objet</th><th>Pièces</th></tr></thead>
+          <tbody>
+            <?php if (empty($recentDepart)): ?>
+              <tr><td colspan="4" class="text-center text-muted py-3">Aucun courrier départ</td></tr>
+            <?php endif; ?>
+            <?php foreach ($recentDepart as $c): ?>
+            <tr>
+              <td class="fs-sm text-muted"><?= formatDate($c['date_depart']) ?></td>
+              <td class="fw-500 fs-sm"><?= h($c['destinataire']) ?></td>
+              <td class="fs-sm text-truncate" style="max-width:120px"><?= h($c['objet']) ?></td>
+              <td><span class="badge bg-secondary"><?= (int)$c['nbre_pieces'] ?></span></td>
+            </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-6">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="fas fa-inbox me-2" style="color:#1a73e8"></i>Derniers courriers arrivée</span>
+        <a href="<?= APP_URL ?>/modules/courriers/arrivee.php" class="btn btn-sm btn-outline-primary">Voir tout</a>
+      </div>
+      <div class="table-responsive">
+        <table class="table mb-0">
+          <thead><tr><th>Date arr.</th><th>Expéditeur</th><th>Objet</th><th>Réponse</th></tr></thead>
+          <tbody>
+            <?php if (empty($recentArrivee)): ?>
+              <tr><td colspan="4" class="text-center text-muted py-3">Aucun courrier arrivée</td></tr>
+            <?php endif; ?>
+            <?php foreach ($recentArrivee as $c): ?>
+            <tr>
+              <td class="fs-sm text-muted"><?= formatDate($c['date_arrivee']) ?></td>
+              <td class="fw-500 fs-sm"><?= h($c['expediteur']) ?></td>
+              <td class="fs-sm text-truncate" style="max-width:120px"><?= h($c['objet']) ?></td>
+              <td>
+                <?php if ($c['date_reponse']): ?>
+                  <span class="badge bg-success" title="<?= formatDate($c['date_reponse']) ?>"><i class="fas fa-check"></i></span>
+                <?php else: ?>
+                  <span class="badge bg-warning text-dark">En attente</span>
+                <?php endif; ?>
+              </td>
+            </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
 <?php endif; ?>
 
 <?php
@@ -977,6 +1175,28 @@ if (fCtx) new Chart(fCtx, {
     ]
   },
   options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'}},scales:{y:{beginAtZero:true,ticks:{callback:v=>v.toLocaleString()+' F'}}}}
+});
+</script>
+JS;
+endif;
+
+if ($role === 'assistante' && !empty($courriersChart)):
+    $ccLabels  = json_encode(array_column($courriersChart, 'mois'));
+    $ccDepart  = json_encode(array_column($courriersChart, 'depart'));
+    $ccArrivee = json_encode(array_column($courriersChart, 'arrivee'));
+    $extraScripts .= <<<JS
+<script>
+const cCtx = document.getElementById('courriersChart')?.getContext('2d');
+if (cCtx) new Chart(cCtx, {
+  type:'bar',
+  data:{
+    labels:{$ccLabels},
+    datasets:[
+      {label:'Départ',data:{$ccDepart},backgroundColor:'rgba(192,57,43,.75)',borderRadius:4},
+      {label:'Arrivée',data:{$ccArrivee},backgroundColor:'rgba(26,115,232,.75)',borderRadius:4}
+    ]
+  },
+  options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}
 });
 </script>
 JS;

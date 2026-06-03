@@ -80,8 +80,13 @@ include APP_ROOT . '/includes/header.php';
   <div class="col-lg-4">
     <div class="card overflow-hidden">
       <div class="profile-header">
-        <div class="profile-avatar">
-          <?= strtoupper(substr($etudiant['prenom'],0,1) . substr($etudiant['nom'],0,1)) ?>
+        <div class="profile-avatar" style="<?= $etudiant['photo'] ? 'background:transparent;border-color:rgba(255,255,255,.5);overflow:hidden;padding:0' : '' ?>">
+          <?php if ($etudiant['photo'] && file_exists(APP_ROOT . '/assets/' . $etudiant['photo'])): ?>
+            <img src="<?= APP_URL . '/assets/' . h($etudiant['photo']) ?>" alt="Photo"
+                 style="width:100%;height:100%;object-fit:cover;border-radius:50%">
+          <?php else: ?>
+            <?= strtoupper(substr($etudiant['prenom'],0,1) . substr($etudiant['nom'],0,1)) ?>
+          <?php endif; ?>
         </div>
         <h5 class="mb-1"><?= h($etudiant['prenom'] . ' ' . $etudiant['nom']) ?></h5>
         <code style="color:rgba(255,255,255,.8)"><?= h($etudiant['matricule']) ?></code>
@@ -107,14 +112,19 @@ include APP_ROOT . '/includes/header.php';
         </ul>
       </div>
       <?php if (hasRole(['admin', 'scolarite', 'directeur'])): ?>
-      <div class="card-footer d-flex gap-2">
+      <div class="card-footer d-flex gap-2 flex-wrap">
         <?php if (hasRole(['admin', 'scolarite'])): ?>
         <a href="<?= APP_URL ?>/modules/etudiants/edit.php?id=<?= $etudiant['id'] ?>" class="btn btn-primary btn-sm flex-fill">
           <i class="fas fa-edit me-1"></i>Modifier
         </a>
         <?php endif; ?>
+        <?php if (hasRole(['admin', 'directeur', 'comptable'])): ?>
         <a href="<?= APP_URL ?>/modules/etudiants/paiements.php?id=<?= $etudiant['id'] ?>" class="btn btn-success btn-sm flex-fill">
           <i class="fas fa-receipt me-1"></i>Paiements
+        </a>
+        <?php endif; ?>
+        <a href="<?= APP_URL ?>/modules/etudiants/carte_identite.php?id=<?= $etudiant['id'] ?>" class="btn btn-outline-primary btn-sm w-100">
+          <i class="fas fa-id-card me-1"></i>Carte d'identité scolaire
         </a>
       </div>
       <?php endif; ?>
@@ -233,13 +243,18 @@ include APP_ROOT . '/includes/header.php';
     </div>
 
     <!-- Actions Bar -->
-    <?php if (hasRole(['admin', 'enseignant'])): ?>
-    <div class="d-flex gap-2 mt-3">
+    <div class="d-flex gap-2 mt-3 flex-wrap">
+      <?php if (hasRole(['admin', 'enseignant'])): ?>
       <a href="<?= APP_URL ?>/modules/pedagogique/bulletins.php?etudiant_id=<?= $etudiant['id'] ?>" class="btn btn-outline-primary">
         <i class="fas fa-file-alt me-2"></i>Générer Bulletin
       </a>
+      <?php endif; ?>
+      <?php if (hasRole(['admin', 'scolarite', 'directeur', 'coordinateur'])): ?>
+      <a href="<?= APP_URL ?>/modules/etudiants/carte_identite.php?id=<?= $etudiant['id'] ?>" class="btn btn-outline-secondary">
+        <i class="fas fa-id-card me-2"></i>Carte d'identité scolaire
+      </a>
+      <?php endif; ?>
     </div>
-    <?php endif; ?>
   </div>
 </div>
 

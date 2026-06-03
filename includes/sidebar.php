@@ -36,6 +36,7 @@ $roleConfig = [
     'comptable'    => ['color' => '#f57c00', 'label' => 'Comptable',            'icon' => 'fa-calculator'],
     'etudiant'     => ['color' => '#ea4335', 'label' => 'Étudiant',             'icon' => 'fa-user-graduate'],
     'coordinateur' => ['color' => '#2e7d32', 'label' => 'Coordinateur',         'icon' => 'fa-sitemap'],
+    'assistante'   => ['color' => '#c0392b', 'label' => 'Assistante Direction',  'icon' => 'fa-envelope-open-text'],
 ];
 $rc = $roleConfig[$role] ?? $roleConfig['etudiant'];
 
@@ -260,6 +261,15 @@ HTML;
         ['/suivi_cours', '/demandes_paiement'],
         '<a href="' . APP_URL . '/modules/administration/suivi_cours.php" class="nav-link' . isActive('/suivi_cours') . '"><i class="fas fa-tasks"></i> Suivi des cours</a>'
       . '<a href="' . APP_URL . '/modules/administration/demandes_paiement.php" class="nav-link d-flex align-items-center justify-content-between' . isActive('/demandes_paiement') . '"><span><i class="fas fa-file-invoice-dollar"></i> Demandes paiement</span>' . $coordPayBadge . '</a>'
+    ) ?>
+
+    <!-- ===== ASSISTANTE DE DIRECTION ===== -->
+    <?php elseif ($role === 'assistante'): ?>
+
+    <?= sidebarGroup('ast-courriers', 'Courriers', 'fa-envelope-open-text',
+        ['/courriers/'],
+        '<a href="' . APP_URL . '/modules/courriers/depart.php" class="nav-link' . isActive('/courriers/depart') . '"><i class="fas fa-paper-plane"></i> Courriers Départ</a>'
+      . '<a href="' . APP_URL . '/modules/courriers/arrivee.php" class="nav-link' . isActive('/courriers/arrivee') . '"><i class="fas fa-inbox"></i> Courriers Arrivée</a>'
     ) ?>
 
     <?php endif; ?>
