@@ -104,6 +104,7 @@ foreach ($ues as $ue) {
 
     /* ── En-tête doc ── */
     .doc-header{background:linear-gradient(135deg,#0f2d5c 0%,#1a5276 100%);border-radius:10px;padding:18px 24px;color:#fff;display:flex;align-items:center;gap:18px;margin-bottom:12px}
+    .doc-header img{width:72px;height:72px;object-fit:contain;border-radius:50%;background:#fff;padding:5px;flex-shrink:0}
     .doc-header-info h1{font-size:15px;font-weight:700;margin:0 0 2px}
     .doc-header-info h2{font-size:11px;font-weight:400;opacity:.85;margin:0 0 6px}
     .doc-header-meta{font-size:11px;opacity:.9;margin-bottom:6px}
@@ -267,9 +268,13 @@ foreach ($ues as $ue) {
 <div class="pv-global">
 
   <!-- ── En-tête document ── -->
+  <?php $_pvgLogo = getLogoUrl(); $_pvgNom = strtoupper(getParam('etablissement_nom', 'École Privée de Santé Ibn Rochd')); ?>
   <div class="doc-header">
+    <?php if ($_pvgLogo): ?>
+      <img src="<?= h($_pvgLogo) ?>" alt="Logo">
+    <?php endif; ?>
     <div class="doc-header-info">
-      <h1>ÉCOLE PRIVÉE DE SANTÉ IBN ROCHD</h1>
+      <h1><?= h($_pvgNom) ?></h1>
       <h2>PROCÈS VERBAL GLOBAL – NIVEAU SUPÉRIEUR</h2>
       <div class="doc-header-meta">
         <?= h($filiere['nom']??'') ?> &nbsp;|&nbsp;

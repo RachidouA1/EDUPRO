@@ -216,7 +216,7 @@ if (isset($_GET['export_excel'])) {
     .bul-wrap{max-width:1400px;margin:0 auto}
 
     .doc-header{background:linear-gradient(135deg,#0f2d5c 0%,#1a5276 100%);border-radius:12px;padding:22px 28px;color:#fff;display:flex;align-items:center;gap:20px;margin-bottom:16px}
-    .doc-header img{width:76px;height:76px;object-fit:cover;border-radius:50%;flex-shrink:0}
+    .doc-header img{width:76px;height:76px;object-fit:contain;border-radius:50%;background:#fff;padding:5px;flex-shrink:0}
     .doc-header-info h1{font-size:17px;font-weight:700;margin:0 0 3px}
     .doc-header-info h2{font-size:12px;font-weight:400;opacity:.85;margin:0 0 7px}
     .doc-header-meta{font-size:12px;opacity:.9;margin-bottom:7px}
@@ -265,9 +265,13 @@ if (isset($_GET['export_excel'])) {
 <body>
 <div class="bul-wrap">
 
+  <?php $_bgLogo = getLogoUrl(); $_bgNom = strtoupper(getParam('etablissement_nom', 'École Privée de Santé Ibn Rochd')); ?>
   <div class="doc-header">
+    <?php if ($_bgLogo): ?>
+      <img src="<?= h($_bgLogo) ?>" alt="Logo">
+    <?php endif; ?>
     <div class="doc-header-info">
-      <h1>ÉCOLE PRIVÉE DE SANTÉ IBN ROCHD</h1>
+      <h1><?= h($_bgNom) ?></h1>
       <h2>RELEVÉ DE NOTES GLOBAL</h2>
       <div class="doc-header-meta">
         <?= h($filiere['nom']??'') ?>

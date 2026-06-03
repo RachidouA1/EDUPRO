@@ -70,7 +70,7 @@ if (isset($_GET['export_excel'])) {
     .pv-wrap{max-width:900px;margin:0 auto}
 
     .doc-header{background:linear-gradient(135deg,#0f2d5c 0%,#1a5276 100%);border-radius:12px;padding:22px 28px;color:#fff;display:flex;align-items:center;gap:20px;margin-bottom:18px}
-    .doc-header img{width:80px;height:80px;object-fit:cover;border-radius:50%;flex-shrink:0}
+    .doc-header img{width:80px;height:80px;object-fit:contain;border-radius:50%;background:#fff;padding:6px;flex-shrink:0}
     .doc-header-info h1{font-size:17px;font-weight:700;margin:0 0 3px}
     .doc-header-info h2{font-size:12px;font-weight:400;opacity:.85;margin:0 0 7px}
     .doc-header-meta{font-size:12px;opacity:.9;margin-bottom:7px}
@@ -129,12 +129,19 @@ if (isset($_GET['export_excel'])) {
     }
   </style>
 </head>
+<?php
+$_pvLogo = getLogoUrl();
+$_pvNom  = strtoupper(getParam('etablissement_nom', 'École Privée de Santé Ibn Rochd'));
+?>
 <body>
 <div class="pv-wrap">
 
   <div class="doc-header">
+    <?php if ($_pvLogo): ?>
+      <img src="<?= h($_pvLogo) ?>" alt="Logo">
+    <?php endif; ?>
     <div class="doc-header-info">
-      <h1>ÉCOLE PRIVÉE DE SANTÉ IBN ROCHD</h1>
+      <h1><?= h($_pvNom) ?></h1>
       <h2>PROCÈS VERBAL – NIVEAU SUPÉRIEUR</h2>
       <div class="doc-header-meta">
         Semestre <?= $semestre_num ?> &nbsp;(Année <?= ceil($semestre_num/2) ?>) &nbsp;|&nbsp; <?= h($annee_label ?? '') ?>
