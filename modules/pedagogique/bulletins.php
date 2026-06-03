@@ -2,8 +2,9 @@
 require_once __DIR__ . '/../../config/config.php';
 requireLogin();
 
-$db   = getDB();
-$user = getCurrentUser();
+$db      = getDB();
+$user    = getCurrentUser();
+$ecoleId = getEcoleId();
 
 $etudiantId  = (int)($_GET['etudiant_id']  ?? 0);
 $anneeId     = (int)($_GET['annee_id']     ?? getActiveAnnee()['id'] ?? 0);
@@ -26,19 +27,20 @@ if ($user['role'] === 'etudiant') {
     $etudiantId = (int)$user['reference_id'];
 }
 
-// Load etudiant
+// Load etudiant (scoped to current school)
 $etudiant = null;
 if ($etudiantId) {
-    $stmt = $db->prepare("
-        SELECT e.*, f.nom as filiere_nom, f.code as filiere_code,
+    $eSql    = "SELECT e.*, f.nom as filiere_nom, f.code as filiere_code,
                f.niveau_superieur, f.tronc_commun, f.tronc_commun_id,
                n.nom as niveau_nom
         FROM etudiants e
         LEFT JOIN filieres f ON f.id=e.filiere_id
         LEFT JOIN niveaux n ON n.id=e.niveau_id
-        WHERE e.id=?
-    ");
-    $stmt->execute([$etudiantId]);
+        WHERE e.id=?";
+    $eParams = [$etudiantId];
+    if ($ecoleId > 0) { $eSql .= " AND e.ecole_id=?"; $eParams[] = $ecoleId; }
+    $stmt = $db->prepare($eSql);
+    $stmt->execute($eParams);
     $etudiant = $stmt->fetch();
 }
 
@@ -490,16 +492,31 @@ if ($isNivSup && $semestreNum) {
 // All students for the dropdown (non-etudiant roles only)
 $allEtudiants = [];
 if (!in_array($user['role'], ['etudiant'])) {
-    $allEtudiants = $db->query("
-        SELECT e.id, e.nom, e.prenom, e.matricule,
-               f.code as filiere_code, f.niveau_superieur, f.tronc_commun, f.tronc_commun_id,
-               n.nom as niveau_nom
-        FROM etudiants e
-        LEFT JOIN filieres f ON f.id=e.filiere_id
-        LEFT JOIN niveaux n ON n.id=e.niveau_id
-        WHERE e.statut='actif'
-        ORDER BY e.nom, e.prenom
-    ")->fetchAll();
+    if ($ecoleId > 0) {
+        $aeStmt = $db->prepare("
+            SELECT e.id, e.nom, e.prenom, e.matricule,
+                   f.code as filiere_code, f.niveau_superieur, f.tronc_commun, f.tronc_commun_id,
+                   n.nom as niveau_nom
+            FROM etudiants e
+            LEFT JOIN filieres f ON f.id=e.filiere_id
+            LEFT JOIN niveaux n ON n.id=e.niveau_id
+            WHERE e.statut='actif' AND e.ecole_id=?
+            ORDER BY e.nom, e.prenom
+        ");
+        $aeStmt->execute([$ecoleId]);
+        $allEtudiants = $aeStmt->fetchAll();
+    } else {
+        $allEtudiants = $db->query("
+            SELECT e.id, e.nom, e.prenom, e.matricule,
+                   f.code as filiere_code, f.niveau_superieur, f.tronc_commun, f.tronc_commun_id,
+                   n.nom as niveau_nom
+            FROM etudiants e
+            LEFT JOIN filieres f ON f.id=e.filiere_id
+            LEFT JOIN niveaux n ON n.id=e.niveau_id
+            WHERE e.statut='actif'
+            ORDER BY e.nom, e.prenom
+        ")->fetchAll();
+    }
 }
 
 // Niveaux groupés par filière_id (pour le formulaire Bulletin Global)

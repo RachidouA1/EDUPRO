@@ -3,8 +3,9 @@ require_once __DIR__ . '/../../config/config.php';
 requireLogin();
 requireRole(['admin', 'directeur']);
 
-$db     = getDB();
-$errors = [];
+$db      = getDB();
+$ecoleId = getEcoleId();
+$errors  = [];
 
 // Inline migrations
 try { $db->exec("ALTER TABLE filieres ADD COLUMN tronc_commun TINYINT(1) NOT NULL DEFAULT 0"); } catch (PDOException $e) {}
@@ -21,12 +22,23 @@ try { $db->exec("CREATE TABLE IF NOT EXISTS classes (
     FOREIGN KEY (niveau_id) REFERENCES niveaux(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); } catch (PDOException $e) {}
 
-// Create LSIO/TC if absent
-$tcExists = (int)$db->query("SELECT COUNT(*) FROM filieres WHERE code='LSIO/TC'")->fetchColumn();
+// Create LSIO/TC if absent (scoped to current school)
+$tcSql = "SELECT COUNT(*) FROM filieres WHERE code='LSIO/TC'";
+$tcParams = [];
+if ($ecoleId > 0) { $tcSql .= " AND ecole_id=?"; $tcParams[] = $ecoleId; }
+$tcStmt = $db->prepare($tcSql); $tcStmt->execute($tcParams);
+$tcExists = (int)$tcStmt->fetchColumn();
 if (!$tcExists) {
-    $db->exec("INSERT INTO filieres (code, nom, description, duree_annees, tronc_commun, actif)
-               VALUES ('LSIO/TC', 'Tronc Commun — Infirmier & Sage-Femme',
-                       'Première année commune aux filières Infirmier et Sage-Femme (niveau supérieur)', 1, 1, 1)");
+    if ($ecoleId > 0) {
+        $db->prepare("INSERT INTO filieres (code, nom, description, duree_annees, tronc_commun, actif, ecole_id)
+                   VALUES ('LSIO/TC', 'Tronc Commun — Infirmier & Sage-Femme',
+                           'Première année commune aux filières Infirmier et Sage-Femme (niveau supérieur)', 1, 1, 1, ?)")
+           ->execute([$ecoleId]);
+    } else {
+        $db->exec("INSERT INTO filieres (code, nom, description, duree_annees, tronc_commun, actif)
+                   VALUES ('LSIO/TC', 'Tronc Commun — Infirmier & Sage-Femme',
+                           'Première année commune aux filières Infirmier et Sage-Femme (niveau supérieur)', 1, 1, 1)");
+    }
     $tcId = (int)$db->lastInsertId();
     $db->prepare("INSERT INTO niveaux (filiere_id, nom, ordre) VALUES (?, 'Tronc Commun', 1)")->execute([$tcId]);
 }
@@ -72,8 +84,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['action']) && hasRole
                 setFlash('success', 'Filière modifiée.');
             } else {
                 try {
-                    $db->prepare("INSERT INTO filieres (code,nom,description,duree_annees,tronc_commun,tronc_commun_id,niveau_superieur) VALUES (?,?,?,?,?,?,?)")
-                       ->execute([$code, $nom, $description ?: null, $duree, $troncCommun, $troncCommunId, $niveauSuperieur]);
+                    if ($ecoleId > 0) {
+                        $db->prepare("INSERT INTO filieres (code,nom,description,duree_annees,tronc_commun,tronc_commun_id,niveau_superieur,ecole_id) VALUES (?,?,?,?,?,?,?,?)")
+                           ->execute([$code, $nom, $description ?: null, $duree, $troncCommun, $troncCommunId, $niveauSuperieur, $ecoleId]);
+                    } else {
+                        $db->prepare("INSERT INTO filieres (code,nom,description,duree_annees,tronc_commun,tronc_commun_id,niveau_superieur) VALUES (?,?,?,?,?,?,?)")
+                           ->execute([$code, $nom, $description ?: null, $duree, $troncCommun, $troncCommunId, $niveauSuperieur]);
+                    }
                     $newId = $db->lastInsertId();
 
                     // Auto-create levels
@@ -135,20 +152,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     }
 }
 
-$filieres = $db->query("
-    SELECT f.*, tc.code as tc_code, tc.nom as tc_nom,
-           COUNT(DISTINCT n.id) as nb_niveaux, COUNT(DISTINCT e.id) as nb_etudiants
-    FROM filieres f
-    LEFT JOIN filieres tc ON tc.id = f.tronc_commun_id
-    LEFT JOIN niveaux n ON n.filiere_id = f.id
-    LEFT JOIN etudiants e ON e.filiere_id = f.id AND e.statut = 'actif'
-    WHERE f.actif = 1
-    GROUP BY f.id
-    ORDER BY f.tronc_commun DESC, f.nom
-")->fetchAll();
+if ($ecoleId > 0) {
+    $fStmt = $db->prepare("
+        SELECT f.*, tc.code as tc_code, tc.nom as tc_nom,
+               COUNT(DISTINCT n.id) as nb_niveaux, COUNT(DISTINCT e.id) as nb_etudiants
+        FROM filieres f
+        LEFT JOIN filieres tc ON tc.id = f.tronc_commun_id
+        LEFT JOIN niveaux n ON n.filiere_id = f.id
+        LEFT JOIN etudiants e ON e.filiere_id = f.id AND e.statut = 'actif'
+        WHERE f.actif = 1 AND f.ecole_id = ?
+        GROUP BY f.id
+        ORDER BY f.tronc_commun DESC, f.nom
+    ");
+    $fStmt->execute([$ecoleId]);
+    $filieres = $fStmt->fetchAll();
+    $tcStmt2 = $db->prepare("SELECT id, code, nom FROM filieres WHERE tronc_commun=1 AND actif=1 AND ecole_id=? ORDER BY nom");
+    $tcStmt2->execute([$ecoleId]);
+    $troncCommuns = $tcStmt2->fetchAll();
+} else {
+    $filieres = $db->query("
+        SELECT f.*, tc.code as tc_code, tc.nom as tc_nom,
+               COUNT(DISTINCT n.id) as nb_niveaux, COUNT(DISTINCT e.id) as nb_etudiants
+        FROM filieres f
+        LEFT JOIN filieres tc ON tc.id = f.tronc_commun_id
+        LEFT JOIN niveaux n ON n.filiere_id = f.id
+        LEFT JOIN etudiants e ON e.filiere_id = f.id AND e.statut = 'actif'
+        WHERE f.actif = 1
+        GROUP BY f.id
+        ORDER BY f.tronc_commun DESC, f.nom
+    ")->fetchAll();
+    $troncCommuns = $db->query("SELECT id, code, nom FROM filieres WHERE tronc_commun=1 AND actif=1 ORDER BY nom")->fetchAll();
+}
 
 // Build reverse map: tronc_commun_id → [filieres qui l'utilisent]
-$troncCommuns = $db->query("SELECT id, code, nom FROM filieres WHERE tronc_commun=1 AND actif=1 ORDER BY nom")->fetchAll();
 $filieresParTronc = []; // [tronc_commun_id => [filiere, ...]]
 foreach ($filieres as $f) {
     if ($f['tronc_commun_id']) {

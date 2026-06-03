@@ -5,6 +5,7 @@ requireRole(['admin', 'comptable']);
 
 $db        = getDB();
 $user      = getCurrentUser();
+$ecoleId   = getEcoleId();
 $errors    = [];
 $errorForm = '';
 
@@ -63,11 +64,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'frais
                 $etuRow = $db->prepare("SELECT nom, prenom FROM etudiants WHERE id=?");
                 $etuRow->execute([$etuId]);
                 $etuRow = $etuRow->fetch();
-                $db->prepare("INSERT INTO recettes (annee_id, date_recette, libelle, categorie, montant, mode_paiement, reference, created_by)
-                    VALUES (?,?,?,?,?,?,?,?)")
-                   ->execute([$anneeId ?: null, $date,
-                       $libelle . ' – ' . ($etuRow['prenom'] ?? '') . ' ' . ($etuRow['nom'] ?? ''),
-                       $typeFrais, $verse, $mode, $numRecu, $user['id']]);
+                if ($ecoleId > 0) {
+                    $db->prepare("INSERT INTO recettes (annee_id, date_recette, libelle, categorie, montant, mode_paiement, reference, created_by, ecole_id)
+                        VALUES (?,?,?,?,?,?,?,?,?)")
+                       ->execute([$anneeId ?: null, $date,
+                           $libelle . ' – ' . ($etuRow['prenom'] ?? '') . ' ' . ($etuRow['nom'] ?? ''),
+                           $typeFrais, $verse, $mode, $numRecu, $user['id'], $ecoleId]);
+                } else {
+                    $db->prepare("INSERT INTO recettes (annee_id, date_recette, libelle, categorie, montant, mode_paiement, reference, created_by)
+                        VALUES (?,?,?,?,?,?,?,?)")
+                       ->execute([$anneeId ?: null, $date,
+                           $libelle . ' – ' . ($etuRow['prenom'] ?? '') . ' ' . ($etuRow['nom'] ?? ''),
+                           $typeFrais, $verse, $mode, $numRecu, $user['id']]);
+                }
             }
 
             redirect('/modules/comptabilite/recu.php?print=' . $payId . '&auto_print=1');
@@ -95,9 +104,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add')
         if (empty($source))                   $errors[] = 'La source est obligatoire.';
 
         if (empty($errors)) {
-            $db->prepare("INSERT INTO recettes (annee_id, date_recette, libelle, categorie, montant, mode_paiement, reference, notes, created_by)
-                VALUES (?,?,?,?,?,?,?,?,?)")
-               ->execute([$anneeId ?: null, $date, $libelle, 'autre', $montant, $mode, $ref ?: null, $source, $user['id']]);
+            if ($ecoleId > 0) {
+                $db->prepare("INSERT INTO recettes (annee_id, date_recette, libelle, categorie, montant, mode_paiement, reference, notes, created_by, ecole_id)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)")
+                   ->execute([$anneeId ?: null, $date, $libelle, 'autre', $montant, $mode, $ref ?: null, $source, $user['id'], $ecoleId]);
+            } else {
+                $db->prepare("INSERT INTO recettes (annee_id, date_recette, libelle, categorie, montant, mode_paiement, reference, notes, created_by)
+                    VALUES (?,?,?,?,?,?,?,?,?)")
+                   ->execute([$anneeId ?: null, $date, $libelle, 'autre', $montant, $mode, $ref ?: null, $source, $user['id']]);
+            }
             setFlash('success', 'Recette enregistrée.');
             redirect('/modules/comptabilite/recettes.php');
         }
@@ -123,6 +138,7 @@ $params = [];
 if ($filterAnneeId) { $where[] = 'r.annee_id=?';                          $params[] = $filterAnneeId; }
 if ($cat)           { $where[] = 'r.categorie=?';                         $params[] = $cat; }
 if ($mois)          { $where[] = 'DATE_FORMAT(r.date_recette,"%Y-%m")=?'; $params[] = $mois; }
+if ($ecoleId > 0)   { $where[] = 'r.ecole_id=?';                          $params[] = $ecoleId; }
 
 $stmt = $db->prepare("SELECT r.*, a.libelle as annee_libelle FROM recettes r LEFT JOIN annees_academiques a ON a.id=r.annee_id WHERE " . implode(' AND ', $where) . " ORDER BY r.date_recette DESC, r.id DESC");
 $stmt->execute($params);
@@ -132,14 +148,27 @@ $totalRecettes = array_sum(array_column($recettes, 'montant'));
 $annees        = getAnneesAcademiques();
 $anneeActive   = getActiveAnnee();
 
-$allEtudiants = $db->query("
-    SELECT e.id, e.nom, e.prenom, e.matricule, f.code as filiere_code, n.nom as niveau_nom
-    FROM etudiants e
-    LEFT JOIN filieres f ON f.id = e.filiere_id
-    LEFT JOIN niveaux n  ON n.id = e.niveau_id
-    WHERE e.statut = 'actif'
-    ORDER BY e.nom, e.prenom
-")->fetchAll();
+if ($ecoleId > 0) {
+    $allEtuStmt = $db->prepare("
+        SELECT e.id, e.nom, e.prenom, e.matricule, f.code as filiere_code, n.nom as niveau_nom
+        FROM etudiants e
+        LEFT JOIN filieres f ON f.id = e.filiere_id
+        LEFT JOIN niveaux n  ON n.id = e.niveau_id
+        WHERE e.statut = 'actif' AND e.ecole_id = ?
+        ORDER BY e.nom, e.prenom
+    ");
+    $allEtuStmt->execute([$ecoleId]);
+} else {
+    $allEtuStmt = $db->query("
+        SELECT e.id, e.nom, e.prenom, e.matricule, f.code as filiere_code, n.nom as niveau_nom
+        FROM etudiants e
+        LEFT JOIN filieres f ON f.id = e.filiere_id
+        LEFT JOIN niveaux n  ON n.id = e.niveau_id
+        WHERE e.statut = 'actif'
+        ORDER BY e.nom, e.prenom
+    ");
+}
+$allEtudiants = $allEtuStmt->fetchAll();
 
 $pageTitle  = 'Recettes';
 $breadcrumb = ['Comptabilité' => null, 'Recettes' => null];
@@ -174,7 +203,13 @@ include APP_ROOT . '/includes/header.php';
     </div>
   </div>
   <div class="col-md-4">
-    <?php $thisMonth = $db->query("SELECT COALESCE(SUM(montant),0) FROM recettes WHERE MONTH(date_recette)=MONTH(NOW()) AND YEAR(date_recette)=YEAR(NOW())")->fetchColumn(); ?>
+    <?php
+      $tmSql = "SELECT COALESCE(SUM(montant),0) FROM recettes WHERE MONTH(date_recette)=MONTH(NOW()) AND YEAR(date_recette)=YEAR(NOW())";
+      $tmParams = [];
+      if ($ecoleId > 0) { $tmSql .= " AND ecole_id=?"; $tmParams[] = $ecoleId; }
+      $tmStmt = $db->prepare($tmSql); $tmStmt->execute($tmParams);
+      $thisMonth = $tmStmt->fetchColumn();
+    ?>
     <div class="stat-card stat-teal">
       <div class="stat-icon"><i class="fas fa-calendar-check"></i></div>
       <div class="stat-body"><div class="stat-value" style="font-size:1.2rem"><?= formatMontant($thisMonth) ?></div><div class="stat-label">Ce mois</div></div>

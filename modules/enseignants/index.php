@@ -3,9 +3,10 @@ require_once __DIR__ . '/../../config/config.php';
 requireLogin();
 requireRole(['admin', 'directeur', 'comptable', 'enseignant', 'coordinateur']);
 
-$db     = getDB();
-$search = sanitize($_GET['search'] ?? '');
-$type   = sanitize($_GET['type']   ?? '');
+$db      = getDB();
+$ecoleId = getEcoleId();
+$search  = sanitize($_GET['search'] ?? '');
+$type    = sanitize($_GET['type']   ?? '');
 
 $where  = ['1=1'];
 $params = [];
@@ -13,7 +14,8 @@ if ($search) {
     $where[]  = "(nom LIKE ? OR prenom LIKE ? OR matricule LIKE ? OR specialite LIKE ?)";
     $params   = ["%$search%", "%$search%", "%$search%", "%$search%"];
 }
-if ($type) { $where[] = 'type_contrat = ?'; $params[] = $type; }
+if ($type)       { $where[] = 'type_contrat = ?'; $params[] = $type; }
+if ($ecoleId > 0) { $where[] = 'ecole_id = ?';   $params[] = $ecoleId; }
 $where[] = 'actif = 1';
 
 $stmt = $db->prepare("SELECT * FROM enseignants WHERE " . implode(' AND ', $where) . " ORDER BY nom, prenom");

@@ -3,7 +3,8 @@ require_once __DIR__ . '/../../config/config.php';
 requireLogin();
 requireRole(['admin', 'comptable', 'directeur']);
 
-$db = getDB();
+$db      = getDB();
+$ecoleId = getEcoleId();
 
 $anneeId = (int)($_GET['annee_id'] ?? getActiveAnnee()['id'] ?? 0);
 $mois    = sanitize($_GET['mois']  ?? '');
@@ -21,6 +22,10 @@ if ($anneeId) {
 if ($mois) {
     $rWhere .= ' AND DATE_FORMAT(date_recette,"%Y-%m")=?';  $rParams[] = $mois;
     $dWhere .= ' AND DATE_FORMAT(date_depense,"%Y-%m")=?';  $dParams[] = $mois;
+}
+if ($ecoleId > 0) {
+    $rWhere .= ' AND ecole_id=?'; $rParams[] = $ecoleId;
+    $dWhere .= ' AND ecole_id=?'; $dParams[] = $ecoleId;
 }
 
 // Totals
@@ -50,13 +55,19 @@ for ($i = 11; $i >= 0; $i--) {
     $m    = date('Y-m', strtotime("-$i months"));
     $yr   = substr($m, 0, 4);
     $mn   = substr($m, 5, 2);
-    $rs   = $db->prepare("SELECT COALESCE(SUM(montant),0) FROM recettes WHERE YEAR(date_recette)=? AND MONTH(date_recette)=?" . ($anneeId ? " AND annee_id=?" : ""));
-    $rp   = $anneeId ? [$yr, $mn, $anneeId] : [$yr, $mn];
+    $rSql = "SELECT COALESCE(SUM(montant),0) FROM recettes WHERE YEAR(date_recette)=? AND MONTH(date_recette)=?";
+    $rp   = [$yr, $mn];
+    if ($anneeId)    { $rSql .= " AND annee_id=?"; $rp[] = $anneeId; }
+    if ($ecoleId > 0) { $rSql .= " AND ecole_id=?"; $rp[] = $ecoleId; }
+    $rs = $db->prepare($rSql);
     $rs->execute($rp);
     $rTotal = (float)$rs->fetchColumn();
 
-    $ds   = $db->prepare("SELECT COALESCE(SUM(montant),0) FROM depenses WHERE YEAR(date_depense)=? AND MONTH(date_depense)=? AND statut='approuvee'" . ($anneeId ? " AND annee_id=?" : ""));
-    $dp   = $anneeId ? [$yr, $mn, $anneeId] : [$yr, $mn];
+    $dSql = "SELECT COALESCE(SUM(montant),0) FROM depenses WHERE YEAR(date_depense)=? AND MONTH(date_depense)=? AND statut='approuvee'";
+    $dp   = [$yr, $mn];
+    if ($anneeId)    { $dSql .= " AND annee_id=?"; $dp[] = $anneeId; }
+    if ($ecoleId > 0) { $dSql .= " AND ecole_id=?"; $dp[] = $ecoleId; }
+    $ds = $db->prepare($dSql);
     $ds->execute($dp);
     $dTotal = (float)$ds->fetchColumn();
 
@@ -68,9 +79,21 @@ for ($i = 11; $i >= 0; $i--) {
     ];
 }
 
-// Paiements étudiants summary
-$payStmt = $db->prepare("SELECT COALESCE(SUM(montant),0) as du, COALESCE(SUM(montant_paye),0) as paye FROM paiements_etudiants" . ($anneeId ? " WHERE annee_id=?" : ""));
-$payStmt->execute($anneeId ? [$anneeId] : []);
+// Paiements étudiants summary (filtered via JOIN on etudiants.ecole_id)
+if ($ecoleId > 0) {
+    $paySql = "SELECT COALESCE(SUM(p.montant),0) as du, COALESCE(SUM(p.montant_paye),0) as paye
+               FROM paiements_etudiants p
+               JOIN etudiants e ON e.id = p.etudiant_id
+               WHERE e.ecole_id=?";
+    $payP = [$ecoleId];
+    if ($anneeId) { $paySql .= " AND p.annee_id=?"; $payP[] = $anneeId; }
+} else {
+    $paySql = "SELECT COALESCE(SUM(montant),0) as du, COALESCE(SUM(montant_paye),0) as paye FROM paiements_etudiants";
+    $payP = [];
+    if ($anneeId) { $paySql .= " WHERE annee_id=?"; $payP[] = $anneeId; }
+}
+$payStmt = $db->prepare($paySql);
+$payStmt->execute($payP);
 $paySummary = $payStmt->fetch();
 
 $annees = getAnneesAcademiques();

@@ -75,11 +75,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </button>
   </form>
 
-  <hr class="my-3">
-  <p class="text-center text-muted" style="font-size:.78rem">
-    Première installation ?
-    <a href="<?= APP_URL ?>/install/setup.php" class="text-primary">Installer la base de données</a>
-  </p>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>

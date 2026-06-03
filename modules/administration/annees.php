@@ -3,8 +3,9 @@ require_once __DIR__ . '/../../config/config.php';
 requireLogin();
 requireRole(['admin', 'directeur']);
 
-$db     = getDB();
-$errors = [];
+$db      = getDB();
+$ecoleId = getEcoleId();
+$errors  = [];
 
 // Migrations
 try { $db->exec("ALTER TABLE semestres ADD COLUMN niveau_superieur TINYINT(1) NOT NULL DEFAULT 0"); } catch (PDOException $e) {}
@@ -90,7 +91,12 @@ if (isset($_GET['delete_sem']) && isset($_GET['csrf']) && hasRole('admin') && ve
 // Activate annee
 if (isset($_GET['activate']) && isset($_GET['csrf']) && hasRole('admin') && verifyCsrfToken($_GET['csrf'])) {
     $id = (int)$_GET['activate'];
-    $db->exec("UPDATE annees_academiques SET actif=0");
+    // Scope deactivation to current school only
+    if ($ecoleId > 0) {
+        $db->prepare("UPDATE annees_academiques SET actif=0 WHERE ecole_id=?")->execute([$ecoleId]);
+    } else {
+        $db->exec("UPDATE annees_academiques SET actif=0");
+    }
     $db->prepare("UPDATE annees_academiques SET actif=1 WHERE id=?")->execute([$id]);
     createSemestresForAnnee($db, $id);
     setFlash('success', 'Année académique activée — semestres vérifiés/créés automatiquement.');
@@ -108,7 +114,12 @@ if (isset($_GET['deactivate']) && isset($_GET['csrf']) && hasRole('admin') && ve
 // Set active semestre
 if (isset($_GET['activate_sem']) && isset($_GET['csrf']) && hasRole('admin') && verifyCsrfToken($_GET['csrf'])) {
     $id = (int)$_GET['activate_sem'];
-    $db->exec("UPDATE semestres SET actif=0");
+    // Scope deactivation to current school's semestres only (via annees_academiques)
+    if ($ecoleId > 0) {
+        $db->prepare("UPDATE semestres SET actif=0 WHERE annee_id IN (SELECT id FROM annees_academiques WHERE ecole_id=?)")->execute([$ecoleId]);
+    } else {
+        $db->exec("UPDATE semestres SET actif=0");
+    }
     $db->prepare("UPDATE semestres SET actif=1 WHERE id=?")->execute([$id]);
     setFlash('success', 'Semestre activé.');
     redirect('/modules/administration/annees.php');
@@ -132,8 +143,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'an
                    ->execute([$libelle, $dateDebut ?: null, $dateFin ?: null, $editId]);
                 setFlash('success', 'Année modifiée.');
             } else {
-                $db->prepare("INSERT INTO annees_academiques (libelle,date_debut,date_fin,actif) VALUES (?,?,?,0)")
-                   ->execute([$libelle, $dateDebut ?: null, $dateFin ?: null]);
+                if ($ecoleId > 0) {
+                    $db->prepare("INSERT INTO annees_academiques (libelle,date_debut,date_fin,actif,ecole_id) VALUES (?,?,?,0,?)")
+                       ->execute([$libelle, $dateDebut ?: null, $dateFin ?: null, $ecoleId]);
+                } else {
+                    $db->prepare("INSERT INTO annees_academiques (libelle,date_debut,date_fin,actif) VALUES (?,?,?,0)")
+                       ->execute([$libelle, $dateDebut ?: null, $dateFin ?: null]);
+                }
                 $newId = (int)$db->lastInsertId();
                 // Créer d'emblée tous les semestres pour la nouvelle année
                 createSemestresForAnnee($db, $newId);
@@ -171,8 +187,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'se
     }
 }
 
-$annees   = $db->query("SELECT a.*, COUNT(s.id) as nb_semestres FROM annees_academiques a LEFT JOIN semestres s ON s.annee_id=a.id GROUP BY a.id ORDER BY a.libelle DESC")->fetchAll();
-$semestres = $db->query("SELECT s.*, a.libelle as annee_libelle FROM semestres s JOIN annees_academiques a ON a.id=s.annee_id ORDER BY a.libelle DESC, s.niveau_superieur ASC, COALESCE(s.semestre_num, 0) ASC, s.id")->fetchAll();
+if ($ecoleId > 0) {
+    $aStmt = $db->prepare("SELECT a.*, COUNT(s.id) as nb_semestres FROM annees_academiques a LEFT JOIN semestres s ON s.annee_id=a.id WHERE a.ecole_id=? GROUP BY a.id ORDER BY a.libelle DESC");
+    $aStmt->execute([$ecoleId]);
+    $annees = $aStmt->fetchAll();
+    $sStmt = $db->prepare("SELECT s.*, a.libelle as annee_libelle FROM semestres s JOIN annees_academiques a ON a.id=s.annee_id WHERE a.ecole_id=? ORDER BY a.libelle DESC, s.niveau_superieur ASC, COALESCE(s.semestre_num, 0) ASC, s.id");
+    $sStmt->execute([$ecoleId]);
+    $semestres = $sStmt->fetchAll();
+} else {
+    $annees    = $db->query("SELECT a.*, COUNT(s.id) as nb_semestres FROM annees_academiques a LEFT JOIN semestres s ON s.annee_id=a.id GROUP BY a.id ORDER BY a.libelle DESC")->fetchAll();
+    $semestres = $db->query("SELECT s.*, a.libelle as annee_libelle FROM semestres s JOIN annees_academiques a ON a.id=s.annee_id ORDER BY a.libelle DESC, s.niveau_superieur ASC, COALESCE(s.semestre_num, 0) ASC, s.id")->fetchAll();
+}
 
 $pageTitle  = 'Années académiques';
 $breadcrumb = ['Administration' => null, 'Années académiques' => null];

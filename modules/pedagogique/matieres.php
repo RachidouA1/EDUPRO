@@ -3,8 +3,9 @@ require_once __DIR__ . '/../../config/config.php';
 requireLogin();
 requireRole(['admin', 'directeur', 'enseignant', 'coordinateur']);
 
-$db     = getDB();
-$errors = [];
+$db      = getDB();
+$ecoleId = getEcoleId();
+$errors  = [];
 try { $db->exec("ALTER TABLE matieres ADD COLUMN formule_calcul VARCHAR(20) NOT NULL DEFAULT 'pondere'"); } catch (PDOException $e) {}
 try { $db->exec("ALTER TABLE matieres ADD COLUMN seuil_reussite INT NOT NULL DEFAULT 12"); } catch (PDOException $e) {}
 try { $db->exec("ALTER TABLE matieres ADD COLUMN ue_id INT NULL"); } catch (PDOException $e) {}
@@ -170,8 +171,9 @@ if (hasRole('coordinateur')) {
 }
 $where   = ['m.actif=1'];
 $params  = [];
-if ($fFilter) { $where[] = 'm.filiere_id=?'; $params[] = $fFilter; }
-if ($nFilter) { $where[] = 'm.niveau_id=?';  $params[] = $nFilter; }
+if ($fFilter)     { $where[] = 'm.filiere_id=?';  $params[] = $fFilter; }
+if ($nFilter)     { $where[] = 'm.niveau_id=?';   $params[] = $nFilter; }
+if ($ecoleId > 0) { $where[] = 'f.ecole_id=?';    $params[] = $ecoleId; }
 $stmt = $db->prepare("
     SELECT m.*, f.nom as filiere_nom, f.code as filiere_code, n.nom as niveau_nom,
            s.nom as semestre_nom, CONCAT(e.prenom,' ',e.nom) as enseignant_nom,
@@ -191,19 +193,41 @@ $matieres = $stmt->fetchAll();
 $filieres    = getFilieres();
 $niveaux     = getNiveaux();
 $semestres   = getSemestres();
-$enseignants = $db->query("SELECT id, nom, prenom, specialite FROM enseignants WHERE actif=1 ORDER BY nom")->fetchAll();
-$filieresSup = $db->query("SELECT * FROM filieres WHERE niveau_superieur=1 AND actif=1 ORDER BY nom")->fetchAll();
-
-$ues_list = $db->query("SELECT id, nom, code_ue, semestre_num, filiere_id FROM ue WHERE actif=1 ORDER BY filiere_id, semestre_num, code_ue")->fetchAll();
-$ues_all  = $db->query("
-    SELECT u.*, f.nom as filiere_nom, f.code as filiere_code, s.nom as semestre_nom,
-           (SELECT COUNT(*) FROM matieres m WHERE m.ue_id=u.id AND m.actif=1) as nb_matieres
-    FROM ue u
-    JOIN filieres f ON f.id = u.filiere_id
-    LEFT JOIN semestres s ON s.id = u.semestre_id
-    WHERE u.actif = 1
-    ORDER BY f.nom, u.semestre_num, u.code_ue
-")->fetchAll();
+if ($ecoleId > 0) {
+    $ensStmt = $db->prepare("SELECT id, nom, prenom, specialite FROM enseignants WHERE actif=1 AND ecole_id=? ORDER BY nom");
+    $ensStmt->execute([$ecoleId]);
+    $enseignants = $ensStmt->fetchAll();
+    $fsStmt = $db->prepare("SELECT * FROM filieres WHERE niveau_superieur=1 AND actif=1 AND ecole_id=? ORDER BY nom");
+    $fsStmt->execute([$ecoleId]);
+    $filieresSup = $fsStmt->fetchAll();
+    $ulStmt = $db->prepare("SELECT u.id, u.nom, u.code_ue, u.semestre_num, u.filiere_id FROM ue u JOIN filieres f ON f.id=u.filiere_id WHERE u.actif=1 AND f.ecole_id=? ORDER BY u.filiere_id, u.semestre_num, u.code_ue");
+    $ulStmt->execute([$ecoleId]);
+    $ues_list = $ulStmt->fetchAll();
+    $uaStmt = $db->prepare("
+        SELECT u.*, f.nom as filiere_nom, f.code as filiere_code, s.nom as semestre_nom,
+               (SELECT COUNT(*) FROM matieres m WHERE m.ue_id=u.id AND m.actif=1) as nb_matieres
+        FROM ue u
+        JOIN filieres f ON f.id = u.filiere_id
+        LEFT JOIN semestres s ON s.id = u.semestre_id
+        WHERE u.actif = 1 AND f.ecole_id = ?
+        ORDER BY f.nom, u.semestre_num, u.code_ue
+    ");
+    $uaStmt->execute([$ecoleId]);
+    $ues_all = $uaStmt->fetchAll();
+} else {
+    $enseignants = $db->query("SELECT id, nom, prenom, specialite FROM enseignants WHERE actif=1 ORDER BY nom")->fetchAll();
+    $filieresSup = $db->query("SELECT * FROM filieres WHERE niveau_superieur=1 AND actif=1 ORDER BY nom")->fetchAll();
+    $ues_list    = $db->query("SELECT id, nom, code_ue, semestre_num, filiere_id FROM ue WHERE actif=1 ORDER BY filiere_id, semestre_num, code_ue")->fetchAll();
+    $ues_all     = $db->query("
+        SELECT u.*, f.nom as filiere_nom, f.code as filiere_code, s.nom as semestre_nom,
+               (SELECT COUNT(*) FROM matieres m WHERE m.ue_id=u.id AND m.actif=1) as nb_matieres
+        FROM ue u
+        JOIN filieres f ON f.id = u.filiere_id
+        LEFT JOIN semestres s ON s.id = u.semestre_id
+        WHERE u.actif = 1
+        ORDER BY f.nom, u.semestre_num, u.code_ue
+    ")->fetchAll();
+}
 
 $pageTitle  = 'Matières & Modules';
 $breadcrumb = ['Pédagogie' => null, 'Matières' => null];

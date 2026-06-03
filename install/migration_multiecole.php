@@ -100,12 +100,16 @@ if (!$fatal && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['migrate'])
     $ecoleId = (int)$pdo->query("SELECT id FROM ecoles ORDER BY id LIMIT 1")->fetchColumn();
 
     // ── ÉTAPE 3 : Ajouter ecole_id aux tables ─────────────────────────────
+    // matieres/ue/niveaux héritent de l'école via filieres.ecole_id (FK),
+    // mais on stocke ecole_id directement pour des requêtes plus simples.
     $tableDefs = [
         'users'              => 'INT DEFAULT NULL',
         'etudiants'          => "INT NOT NULL DEFAULT $ecoleId",
         'enseignants'        => "INT NOT NULL DEFAULT $ecoleId",
         'filieres'           => "INT NOT NULL DEFAULT $ecoleId",
+        'niveaux'            => "INT NOT NULL DEFAULT $ecoleId",
         'annees_academiques' => "INT NOT NULL DEFAULT $ecoleId",
+        'matieres'           => "INT NOT NULL DEFAULT $ecoleId",
         'recettes'           => "INT NOT NULL DEFAULT $ecoleId",
         'depenses'           => "INT NOT NULL DEFAULT $ecoleId",
         'parametres'         => "INT NOT NULL DEFAULT $ecoleId",
@@ -124,7 +128,7 @@ if (!$fatal && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['migrate'])
     // ── ÉTAPE 4 : Rattacher les données existantes ─────────────────────────
     step($steps, 'Rattacher les données à l\'école par défaut', function() use ($pdo, $ecoleId) {
         $total = 0;
-        $tables = ['etudiants','enseignants','filieres','annees_academiques','recettes','depenses','parametres','courriers_depart','courriers_arrivee'];
+        $tables = ['etudiants','enseignants','filieres','niveaux','annees_academiques','matieres','recettes','depenses','parametres','courriers_depart','courriers_arrivee'];
         foreach ($tables as $t) {
             if (!tableExists($pdo,$t) || !columnExists($pdo,$t,'ecole_id')) continue;
             $n = $pdo->exec("UPDATE `$t` SET ecole_id=$ecoleId WHERE ecole_id IS NULL OR ecole_id=0");

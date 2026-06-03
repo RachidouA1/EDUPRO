@@ -3,10 +3,11 @@ require_once __DIR__ . '/../../config/config.php';
 requireLogin();
 requireRole(['admin', 'directeur', 'comptable']);
 
-$db   = getDB();
-$user = getCurrentUser();
-$role = $user['role'];
-$errors = [];
+$db      = getDB();
+$user    = getCurrentUser();
+$ecoleId = getEcoleId();
+$role    = $user['role'];
+$errors  = [];
 
 // Ensure columns exist (migration guard)
 try { $db->exec("ALTER TABLE depenses ADD COLUMN statut ENUM('en_attente','approuvee','rejetee') NOT NULL DEFAULT 'approuvee' AFTER mode_paiement"); } catch (PDOException $e) {}
@@ -45,11 +46,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add')
                 $approuveAt  = null;
             }
 
-            $db->prepare("INSERT INTO depenses (annee_id, date_depense, libelle, categorie, montant, beneficiaire, mode_paiement, notes, statut, approuve_par, approuve_at, created_by)
-                          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")
-               ->execute([$anneeId ?: null, $date, $libelle, $categorie, $montant,
-                          $beneficiaire ?: null, $mode, $justification ?: null,
-                          $statut, $approuvePar, $approuveAt, $user['id']]);
+            if ($ecoleId > 0) {
+                $db->prepare("INSERT INTO depenses (annee_id, date_depense, libelle, categorie, montant, beneficiaire, mode_paiement, notes, statut, approuve_par, approuve_at, created_by, ecole_id)
+                              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)")
+                   ->execute([$anneeId ?: null, $date, $libelle, $categorie, $montant,
+                              $beneficiaire ?: null, $mode, $justification ?: null,
+                              $statut, $approuvePar, $approuveAt, $user['id'], $ecoleId]);
+            } else {
+                $db->prepare("INSERT INTO depenses (annee_id, date_depense, libelle, categorie, montant, beneficiaire, mode_paiement, notes, statut, approuve_par, approuve_at, created_by)
+                              VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")
+                   ->execute([$anneeId ?: null, $date, $libelle, $categorie, $montant,
+                              $beneficiaire ?: null, $mode, $justification ?: null,
+                              $statut, $approuvePar, $approuveAt, $user['id']]);
+            }
 
             if ($statut === 'en_attente') {
                 setFlash('success', 'Demande de dépense soumise. En attente d\'autorisation de l\'administrateur.');
@@ -112,6 +121,7 @@ if ($anneeId)      { $where[] = 'd.annee_id=?';                             $par
 if ($cat)          { $where[] = 'd.categorie=?';                             $params[] = $cat; }
 if ($mois)         { $where[] = 'DATE_FORMAT(d.date_depense,"%Y-%m")=?';    $params[] = $mois; }
 if ($filtreStatut) { $where[] = 'd.statut=?';                                $params[] = $filtreStatut; }
+if ($ecoleId > 0)  { $where[] = 'd.ecole_id=?';                             $params[] = $ecoleId; }
 
 $stmt = $db->prepare("
     SELECT d.*, a.libelle as annee_libelle,
@@ -131,7 +141,12 @@ $depenses = $stmt->fetchAll();
 $totalApprouve = array_sum(array_column(array_filter($depenses, fn($d) => $d['statut'] === 'approuvee'), 'montant'));
 
 // Compteur de demandes en attente (pour l'alerte admin)
-$nbEnAttente = (int)$db->query("SELECT COUNT(*) FROM depenses WHERE statut='en_attente'")->fetchColumn();
+$nbAttSql = "SELECT COUNT(*) FROM depenses WHERE statut='en_attente'";
+$nbAttParams = [];
+if ($ecoleId > 0) { $nbAttSql .= " AND ecole_id=?"; $nbAttParams[] = $ecoleId; }
+$nbAttStmt = $db->prepare($nbAttSql);
+$nbAttStmt->execute($nbAttParams);
+$nbEnAttente = (int)$nbAttStmt->fetchColumn();
 
 $annees      = getAnneesAcademiques();
 $anneeActive = getActiveAnnee();
@@ -185,7 +200,13 @@ include APP_ROOT . '/includes/header.php';
     </div>
   </div>
   <div class="col-md-4">
-    <?php $thisMonth = $db->query("SELECT COALESCE(SUM(montant),0) FROM depenses WHERE statut='approuvee' AND MONTH(date_depense)=MONTH(NOW()) AND YEAR(date_depense)=YEAR(NOW())")->fetchColumn(); ?>
+    <?php
+      $tmSql = "SELECT COALESCE(SUM(montant),0) FROM depenses WHERE statut='approuvee' AND MONTH(date_depense)=MONTH(NOW()) AND YEAR(date_depense)=YEAR(NOW())";
+      $tmParams = [];
+      if ($ecoleId > 0) { $tmSql .= " AND ecole_id=?"; $tmParams[] = $ecoleId; }
+      $tmStmt = $db->prepare($tmSql); $tmStmt->execute($tmParams);
+      $thisMonth = $tmStmt->fetchColumn();
+    ?>
     <div class="stat-card stat-orange">
       <div class="stat-icon"><i class="fas fa-calendar-times"></i></div>
       <div class="stat-body"><div class="stat-value" style="font-size:1.2rem"><?= formatMontant($thisMonth) ?></div><div class="stat-label">Ce mois (approuvé)</div></div>

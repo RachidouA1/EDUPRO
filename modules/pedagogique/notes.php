@@ -233,13 +233,15 @@ if ($matiereId && $anneeId && (!$needsSemestre || $semestreId)) {
             $selectedMatiere['formule_calcul'] ?? 'pondere'
         );
 
-        $eStmt = $db->prepare("
-            SELECT e.id, e.nom, e.prenom, e.matricule, e.sexe
-            FROM etudiants e
-            WHERE e.filiere_id=? AND e.niveau_id=? AND e.annee_id=? AND e.statut='actif'
-            ORDER BY e.nom, e.prenom
-        ");
-        $eStmt->execute([$selectedMatiere['filiere_id'], $selectedMatiere['niveau_id'], $anneeId]);
+        $ecoleId = getEcoleId();
+        $eSql    = "SELECT e.id, e.nom, e.prenom, e.matricule, e.sexe
+                    FROM etudiants e
+                    WHERE e.filiere_id=? AND e.niveau_id=? AND e.annee_id=? AND e.statut='actif'";
+        $eParams = [$selectedMatiere['filiere_id'], $selectedMatiere['niveau_id'], $anneeId];
+        if ($ecoleId > 0) { $eSql .= " AND e.ecole_id=?"; $eParams[] = $ecoleId; }
+        $eSql .= " ORDER BY e.nom, e.prenom";
+        $eStmt = $db->prepare($eSql);
+        $eStmt->execute($eParams);
         $etudiants = $eStmt->fetchAll();
 
         // Notes for the current session (semestre_id IS NULL pour ASB/VP)

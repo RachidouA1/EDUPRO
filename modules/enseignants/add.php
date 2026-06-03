@@ -3,8 +3,9 @@ require_once __DIR__ . '/../../config/config.php';
 requireLogin();
 requireRole(['admin', 'coordinateur']);
 
-$db     = getDB();
-$errors = [];
+$db      = getDB();
+$ecoleId = getEcoleId();
+$errors  = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrfToken($_POST['csrf'] ?? '')) {
@@ -30,15 +31,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (empty($errors)) {
             $matricule = generateMatricule('ENS');
-            $db->prepare("INSERT INTO enseignants (matricule, nom, prenom, sexe, date_naissance, telephone, email, adresse, specialite, type_contrat, salaire_base, date_recrutement)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")
-               ->execute([
-                    $matricule, $data['nom'], $data['prenom'], $data['sexe'],
-                    $data['date_naissance'] ?: null, $data['telephone'] ?: null,
-                    $data['email'] ?: null, $data['adresse'] ?: null,
-                    $data['specialite'] ?: null, $data['type_contrat'],
-                    $data['salaire_base'], $data['date_recrutement'] ?: null,
-               ]);
+            if ($ecoleId > 0) {
+                $db->prepare("INSERT INTO enseignants (matricule, nom, prenom, sexe, date_naissance, telephone, email, adresse, specialite, type_contrat, salaire_base, date_recrutement, ecole_id)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)")
+                   ->execute([
+                        $matricule, $data['nom'], $data['prenom'], $data['sexe'],
+                        $data['date_naissance'] ?: null, $data['telephone'] ?: null,
+                        $data['email'] ?: null, $data['adresse'] ?: null,
+                        $data['specialite'] ?: null, $data['type_contrat'],
+                        $data['salaire_base'], $data['date_recrutement'] ?: null, $ecoleId,
+                   ]);
+            } else {
+                $db->prepare("INSERT INTO enseignants (matricule, nom, prenom, sexe, date_naissance, telephone, email, adresse, specialite, type_contrat, salaire_base, date_recrutement)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")
+                   ->execute([
+                        $matricule, $data['nom'], $data['prenom'], $data['sexe'],
+                        $data['date_naissance'] ?: null, $data['telephone'] ?: null,
+                        $data['email'] ?: null, $data['adresse'] ?: null,
+                        $data['specialite'] ?: null, $data['type_contrat'],
+                        $data['salaire_base'], $data['date_recrutement'] ?: null,
+                   ]);
+            }
             $newId = $db->lastInsertId();
 
             // Create teacher user account
