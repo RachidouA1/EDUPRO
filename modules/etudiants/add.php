@@ -125,7 +125,7 @@ include APP_ROOT . '/includes/header.php';
   <input type="hidden" name="csrf" value="<?= h(generateCsrfToken()) ?>">
 
   <?php foreach ($errors as $err): ?>
-    <div class="alert alert-danger"><i class="fas fa-exclamation-circle me-2"></i><?= $err ?></div>
+    <div class="alert alert-danger"><i class="fas fa-exclamation-circle me-2"></i><?= h($err) ?></div>
   <?php endforeach; ?>
 
   <div class="row g-4">

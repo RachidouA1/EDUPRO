@@ -19,12 +19,17 @@ try {
         date_reponse        DATE DEFAULT NULL,
         n_reponse           VARCHAR(100) DEFAULT NULL,
         created_by          INT NOT NULL,
-        created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 } catch (PDOException $e) {}
 
-// Suppression
+// Suppression — réservée aux admin et assistante
 if (isset($_GET['action'], $_GET['id']) && $_GET['action'] === 'delete' && verifyCsrfToken($_GET['csrf'] ?? '')) {
+    if (!hasRole(['admin', 'assistante'])) {
+        setFlash('error', 'Action non autorisée.');
+        redirect('/modules/courriers/arrivee.php');
+    }
     $db->prepare("DELETE FROM courriers_arrivee WHERE id=?")->execute([(int)$_GET['id']]);
     setFlash('success', 'Courrier arrivée supprimé.');
     redirect('/modules/courriers/arrivee.php');
@@ -59,18 +64,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $n_reponse ?: null,
             ];
             if ($editId) {
-                $db->prepare("UPDATE courriers_arrivee SET date_arrivee=?,date_correspondance=?,n_correspondance=?,
-                    expediteur=?,objet=?,date_reponse=?,n_reponse=? WHERE id=?")
-                   ->execute(array_merge($params, [$editId]));
-                setFlash('success', 'Courrier modifié.');
+                // Admin peut modifier tout enregistrement; les autres uniquement le leur
+                $canEdit = hasRole('admin');
+                if (!$canEdit) {
+                    $chk = $db->prepare("SELECT id FROM courriers_arrivee WHERE id=? AND created_by=?");
+                    $chk->execute([$editId, $user['id']]);
+                    $canEdit = $chk->rowCount() > 0;
+                }
+                if (!$canEdit) {
+                    $errors[] = 'Vous ne pouvez modifier que vos propres courriers.';
+                } else {
+                    $db->prepare("UPDATE courriers_arrivee SET date_arrivee=?,date_correspondance=?,n_correspondance=?,
+                        expediteur=?,objet=?,date_reponse=?,n_reponse=? WHERE id=?")
+                       ->execute(array_merge($params, [$editId]));
+                    setFlash('success', 'Courrier modifié.');
+                    redirect('/modules/courriers/arrivee.php');
+                }
             } else {
                 $db->prepare("INSERT INTO courriers_arrivee
                     (date_arrivee,date_correspondance,n_correspondance,expediteur,objet,date_reponse,n_reponse,created_by)
                     VALUES (?,?,?,?,?,?,?,?)")
                    ->execute(array_merge($params, [$user['id']]));
                 setFlash('success', 'Courrier arrivée enregistré.');
+                redirect('/modules/courriers/arrivee.php');
             }
-            redirect('/modules/courriers/arrivee.php');
         }
     }
 }

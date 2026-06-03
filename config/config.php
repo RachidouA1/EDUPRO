@@ -1,6 +1,6 @@
 <?php
-define('APP_NAME',     'EPSI');
-define('APP_FULLNAME', 'École Privée de Santé Ibn Rochd');
+define('APP_NAME',     'EDUPRO');
+define('APP_FULLNAME', 'E-EDU PRO');
 define('APP_URL',      '/EDUPRO');
 define('APP_ROOT',     dirname(__DIR__));
 define('ASSETS_URL',   APP_URL . '/assets');

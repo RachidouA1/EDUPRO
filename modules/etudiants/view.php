@@ -123,9 +123,6 @@ include APP_ROOT . '/includes/header.php';
           <i class="fas fa-receipt me-1"></i>Paiements
         </a>
         <?php endif; ?>
-        <a href="<?= APP_URL ?>/modules/etudiants/carte_identite.php?id=<?= $etudiant['id'] ?>" class="btn btn-outline-primary btn-sm w-100">
-          <i class="fas fa-id-card me-1"></i>Carte d'identité scolaire
-        </a>
       </div>
       <?php endif; ?>
     </div>

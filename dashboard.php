@@ -121,15 +121,18 @@ if ($role === 'assistante') {
         $recentDepart  = $db->query("SELECT * FROM courriers_depart ORDER BY date_depart DESC, id DESC LIMIT 5")->fetchAll();
         $recentArrivee = $db->query("SELECT * FROM courriers_arrivee ORDER BY date_arrivee DESC, id DESC LIMIT 5")->fetchAll();
 
+        $sixMonthsAgo = date('Y-m-01', strtotime('-5 months'));
+        $dStmt = $db->prepare("SELECT DATE_FORMAT(date_depart,'%Y-%m') AS m, COUNT(*) AS cnt FROM courriers_depart WHERE date_depart >= ? GROUP BY m");
+        $dStmt->execute([$sixMonthsAgo]);
+        $dByMonth = array_column($dStmt->fetchAll(), 'cnt', 'm');
+        $aStmt = $db->prepare("SELECT DATE_FORMAT(date_arrivee,'%Y-%m') AS m, COUNT(*) AS cnt FROM courriers_arrivee WHERE date_arrivee >= ? GROUP BY m");
+        $aStmt->execute([$sixMonthsAgo]);
+        $aByMonth = array_column($aStmt->fetchAll(), 'cnt', 'm');
         $courriersChart = [];
         for ($i = 5; $i >= 0; $i--) {
             $m = date('Y-m', strtotime("-$i months"));
             [$yr, $mn] = explode('-', $m);
-            $d = $db->prepare("SELECT COUNT(*) FROM courriers_depart  WHERE YEAR(date_depart)=?  AND MONTH(date_depart)=?");
-            $d->execute([$yr, $mn]);
-            $a = $db->prepare("SELECT COUNT(*) FROM courriers_arrivee WHERE YEAR(date_arrivee)=? AND MONTH(date_arrivee)=?");
-            $a->execute([$yr, $mn]);
-            $courriersChart[] = ['mois' => date('M Y', mktime(0,0,0,(int)$mn,1,(int)$yr)), 'depart' => (int)$d->fetchColumn(), 'arrivee' => (int)$a->fetchColumn()];
+            $courriersChart[] = ['mois' => date('M Y', mktime(0,0,0,(int)$mn,1,(int)$yr)), 'depart' => (int)($dByMonth[$m] ?? 0), 'arrivee' => (int)($aByMonth[$m] ?? 0)];
         }
     } catch (PDOException $e) {
         $stats['depart_total'] = $stats['arrivee_total'] = $stats['depart_mois'] = $stats['arrivee_mois'] = $stats['sans_reponse'] = 0;

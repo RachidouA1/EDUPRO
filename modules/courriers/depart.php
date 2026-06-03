@@ -18,12 +18,17 @@ try {
         n_archives  VARCHAR(100) DEFAULT NULL,
         observations TEXT DEFAULT NULL,
         created_by  INT NOT NULL,
-        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 } catch (PDOException $e) {}
 
-// Suppression
+// Suppression — réservée aux admin et assistante
 if (isset($_GET['action'], $_GET['id']) && $_GET['action'] === 'delete' && verifyCsrfToken($_GET['csrf'] ?? '')) {
+    if (!hasRole(['admin', 'assistante'])) {
+        setFlash('error', 'Action non autorisée.');
+        redirect('/modules/courriers/depart.php');
+    }
     $db->prepare("DELETE FROM courriers_depart WHERE id=?")->execute([(int)$_GET['id']]);
     setFlash('success', 'Courrier départ supprimé.');
     redirect('/modules/courriers/depart.php');
@@ -48,15 +53,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (empty($errors)) {
             if ($editId) {
-                $db->prepare("UPDATE courriers_depart SET nbre_pieces=?,date_depart=?,destinataire=?,objet=?,n_archives=?,observations=? WHERE id=?")
-                   ->execute([$nbre_pieces, $date_depart, $destinataire, $objet, $n_archives ?: null, $observations ?: null, $editId]);
-                setFlash('success', 'Courrier modifié.');
+                // Admin peut modifier tout enregistrement; les autres uniquement le leur
+                $canEdit = hasRole('admin');
+                if (!$canEdit) {
+                    $chk = $db->prepare("SELECT id FROM courriers_depart WHERE id=? AND created_by=?");
+                    $chk->execute([$editId, $user['id']]);
+                    $canEdit = $chk->rowCount() > 0;
+                }
+                if (!$canEdit) {
+                    $errors[] = 'Vous ne pouvez modifier que vos propres courriers.';
+                } else {
+                    $db->prepare("UPDATE courriers_depart SET nbre_pieces=?,date_depart=?,destinataire=?,objet=?,n_archives=?,observations=? WHERE id=?")
+                       ->execute([$nbre_pieces, $date_depart, $destinataire, $objet, $n_archives ?: null, $observations ?: null, $editId]);
+                    setFlash('success', 'Courrier modifié.');
+                    redirect('/modules/courriers/depart.php');
+                }
             } else {
                 $db->prepare("INSERT INTO courriers_depart (nbre_pieces,date_depart,destinataire,objet,n_archives,observations,created_by) VALUES (?,?,?,?,?,?,?)")
                    ->execute([$nbre_pieces, $date_depart, $destinataire, $objet, $n_archives ?: null, $observations ?: null, $user['id']]);
                 setFlash('success', 'Courrier départ enregistré.');
+                redirect('/modules/courriers/depart.php');
             }
-            redirect('/modules/courriers/depart.php');
         }
     }
 }
