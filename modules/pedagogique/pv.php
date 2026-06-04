@@ -169,6 +169,19 @@ if (isset($_GET['action']) && $_GET['action'] === 'pv_individuel' && isset($_GET
             $decision_class = 'non-valide';
         }
 
+        // Liste des étudiants pour le panneau "Changer d'étudiant"
+        $etudiants_switch = [];
+        if (!empty($filieres_avec_ue)) {
+            $ids_f = implode(',', array_map(fn($f) => (int)$f['id'], $filieres_avec_ue));
+            $etudiants_switch = $db->query("
+                SELECT e.id, e.matricule, e.nom, e.prenom, f.nom as filiere_nom, f.code as filiere_code
+                FROM etudiants e
+                JOIN filieres f ON f.id = e.filiere_id
+                WHERE e.filiere_id IN ($ids_f) AND e.statut = 'actif'
+                ORDER BY e.nom, e.prenom
+            ")->fetchAll();
+        }
+
         include __DIR__ . '/pv_individuel_view.php';
         exit();
     }
@@ -300,6 +313,15 @@ if (isset($_GET['action']) && $_GET['action'] === 'pv_global' && isset($_GET['fi
                 $moy_ue = $total_coef > 0 ? $total_pts / $total_coef : 0;
                 $notes_data[$e['id']][$ue['id']]['moyenne_ue'] = $moy_ue;
                 $notes_data[$e['id']][$ue['id']]['valide']     = $moy_ue >= 10;
+
+                // Crédits de l'UE
+                $cr_req = 0; $cr_acq = 0;
+                foreach ($notes_data[$e['id']][$ue['id']]['matieres'] as $md) {
+                    $cr_req += floatval($md['coeff']);
+                    if ($md['valide']) $cr_acq += floatval($md['coeff']);
+                }
+                $notes_data[$e['id']][$ue['id']]['credit_requis'] = $cr_req;
+                $notes_data[$e['id']][$ue['id']]['credit_acquis'] = $cr_acq;
             }
 
             // Moyenne générale + décision
@@ -317,6 +339,20 @@ if (isset($_GET['action']) && $_GET['action'] === 'pv_global' && isset($_GET['fi
                 $notes_data[$e['id']]['decision'] = $ue_non_val === 0 ? 'VALIDÉ' : 'REPRISE 2ÈME SESSION';
             } else {
                 $notes_data[$e['id']]['decision'] = $ue_non_val === 0 ? 'VALIDÉ' : 'NON VALIDÉ';
+            }
+
+            // Crédits globaux du semestre
+            $cr_acq_g = 0; $cr_req_g = 0;
+            foreach ($ues as $ue) {
+                $cr_acq_g += $notes_data[$e['id']][$ue['id']]['credit_acquis'] ?? 0;
+                $cr_req_g += $notes_data[$e['id']][$ue['id']]['credit_requis'] ?? 0;
+            }
+            $notes_data[$e['id']]['credit_acquis_global'] = $cr_acq_g;
+            $notes_data[$e['id']]['credit_requis_global'] = $cr_req_g;
+
+            // Crédits acquis < 30 → semestre non validé même si toutes les UE le sont
+            if ($cr_acq_g < 30 && $notes_data[$e['id']]['decision'] === 'VALIDÉ') {
+                $notes_data[$e['id']]['decision'] = $session_num === 1 ? 'REPRISE 2ÈME SESSION' : 'NON VALIDÉ';
             }
         }
 
@@ -369,15 +405,50 @@ include APP_ROOT . '/includes/header.php';
 
           <div class="mb-3">
             <label class="form-label fw-600">Étudiant</label>
-            <select name="etudiant_id" class="form-select" required>
-              <option value="">-- Sélectionner un étudiant --</option>
-              <?php foreach ($etudiants_sup as $e): ?>
-                <option value="<?= $e['id'] ?>">
-                  <?= h($e['matricule']) ?> – <?= h($e['nom']) ?> <?= h($e['prenom']) ?>
-                  (<?= h($e['filiere_nom']) ?>)
-                </option>
-              <?php endforeach; ?>
-            </select>
+            <div class="position-relative" id="pvStudWrap">
+              <div class="input-group">
+                <span class="input-group-text bg-white border-end-0">
+                  <i class="fas fa-search text-muted" style="font-size:.85rem"></i>
+                </span>
+                <input type="text" id="pvStudDisplay" class="form-control border-start-0 border-end-0"
+                       placeholder="Rechercher par matricule, nom, prénom…"
+                       autocomplete="off" style="cursor:text" required>
+                <button type="button" id="pvStudClear" class="btn btn-outline-secondary border-start-0"
+                        style="display:none" title="Effacer" onclick="pvClearStudent()">
+                  <i class="fas fa-times"></i>
+                </button>
+              </div>
+              <input type="hidden" name="etudiant_id" id="pvStudHidden" value="" required>
+              <div id="pvStudPanel" class="card shadow position-absolute w-100"
+                   style="display:none;z-index:1100;top:calc(100% + 4px);max-height:260px;overflow-y:auto">
+                <div class="p-2 border-bottom sticky-top bg-white">
+                  <small class="text-muted" id="pvStudCount"></small>
+                </div>
+                <div id="pvStudList">
+                  <?php foreach ($etudiants_sup as $e): ?>
+                  <div class="pv-stud-opt d-flex align-items-center gap-2 px-3 py-2"
+                       data-id="<?= $e['id'] ?>"
+                       data-label="<?= h($e['matricule'].' – '.$e['nom'].' '.$e['prenom']) ?>"
+                       data-search="<?= strtolower(h($e['matricule'].' '.$e['nom'].' '.$e['prenom'].' '.$e['filiere_nom'])) ?>"
+                       style="cursor:pointer;border-bottom:1px solid #f5f5f5">
+                    <div style="background:#dc3545;color:#fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:.72rem;flex-shrink:0;font-weight:600">
+                      <?= strtoupper(substr($e['prenom'],0,1).substr($e['nom'],0,1)) ?>
+                    </div>
+                    <div style="min-width:0">
+                      <div class="fw-600 fs-sm"><?= h($e['nom'].' '.$e['prenom']) ?></div>
+                      <div style="font-size:.73rem;color:#888">
+                        <code><?= h($e['matricule']) ?></code>
+                        &nbsp;·&nbsp;<?= h($e['filiere_code'] ?? $e['filiere_nom']) ?>
+                      </div>
+                    </div>
+                  </div>
+                  <?php endforeach; ?>
+                  <div id="pvStudEmpty" class="text-center text-muted py-3 d-none" style="font-size:.85rem">
+                    <i class="fas fa-search-minus d-block mb-1"></i>Aucun résultat
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="mb-3">
@@ -485,5 +556,72 @@ include APP_ROOT . '/includes/header.php';
 </div>
 
 <?php endif; ?>
+
+<script>
+(function () {
+  const wrap    = document.getElementById('pvStudWrap');
+  if (!wrap) return;
+  const display = document.getElementById('pvStudDisplay');
+  const hidden  = document.getElementById('pvStudHidden');
+  const panel   = document.getElementById('pvStudPanel');
+  const list    = document.getElementById('pvStudList');
+  const empty   = document.getElementById('pvStudEmpty');
+  const count   = document.getElementById('pvStudCount');
+  const clear   = document.getElementById('pvStudClear');
+  const opts    = list.querySelectorAll('.pv-stud-opt');
+  const total   = opts.length;
+
+  function updateCount(vis) {
+    count.textContent = vis + ' / ' + total + ' apprenant(s)';
+  }
+
+  function open() {
+    panel.style.display = '';
+    filterOpts(display.value.trim());
+    display.focus();
+  }
+  function close() { panel.style.display = 'none'; }
+
+  function filterOpts(q) {
+    const lq = q.toLowerCase();
+    let vis = 0;
+    opts.forEach(o => {
+      const match = !lq || o.dataset.search.includes(lq);
+      o.style.display = match ? '' : 'none';
+      if (match) vis++;
+    });
+    empty.classList.toggle('d-none', vis > 0);
+    updateCount(vis);
+  }
+
+  display.addEventListener('focus', open);
+  display.addEventListener('input', function () { filterOpts(this.value.trim()); });
+
+  list.addEventListener('click', function (ev) {
+    const opt = ev.target.closest('.pv-stud-opt');
+    if (!opt) return;
+    hidden.value  = opt.dataset.id;
+    display.value = opt.dataset.label;
+    display.readOnly = true;
+    clear.style.display = '';
+    close();
+  });
+
+  list.addEventListener('mouseover', ev => { const o = ev.target.closest('.pv-stud-opt'); if (o) o.style.background = '#f0f4f8'; });
+  list.addEventListener('mouseout',  ev => { const o = ev.target.closest('.pv-stud-opt'); if (o) o.style.background = ''; });
+
+  document.addEventListener('click', ev => { if (!wrap.contains(ev.target)) close(); });
+
+  updateCount(total);
+})();
+
+function pvClearStudent() {
+  document.getElementById('pvStudDisplay').value = '';
+  document.getElementById('pvStudDisplay').readOnly = false;
+  document.getElementById('pvStudHidden').value = '';
+  document.getElementById('pvStudClear').style.display = 'none';
+  document.getElementById('pvStudPanel').style.display = 'none';
+}
+</script>
 
 <?php include APP_ROOT . '/includes/footer.php'; ?>

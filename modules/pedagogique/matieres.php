@@ -6,7 +6,7 @@ requireRole(['admin', 'directeur', 'enseignant', 'coordinateur']);
 $db      = getDB();
 $ecoleId = getEcoleId();
 $errors  = [];
-try { $db->exec("ALTER TABLE matieres ADD COLUMN formule_calcul VARCHAR(20) NOT NULL DEFAULT 'pondere'"); } catch (PDOException $e) {}
+try { $db->exec("ALTER TABLE matieres ADD COLUMN formule_calcul VARCHAR(20) NOT NULL DEFAULT 'exam_seul'"); } catch (PDOException $e) {}
 try { $db->exec("ALTER TABLE matieres ADD COLUMN seuil_reussite INT NOT NULL DEFAULT 12"); } catch (PDOException $e) {}
 try { $db->exec("ALTER TABLE matieres ADD COLUMN ue_id INT NULL"); } catch (PDOException $e) {}
 try { $db->exec("ALTER TABLE matieres ADD COLUMN semestre_num TINYINT NULL"); } catch (PDOException $e) {}
@@ -75,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (hasRole('admin') || hasRole('coord
             'ue_id'          => (int)($_POST['ue_id']                   ?? 0) ?: null,
             'seuil_reussite' => max(0, min(20, (int)($_POST['seuil_reussite'] ?? 12))),
             'formule_calcul' => in_array($_POST['formule_calcul'] ?? '', ['pondere','demi_somme','exam_seul'])
-                                ? $_POST['formule_calcul'] : 'pondere',
+                                ? $_POST['formule_calcul'] : 'exam_seul',
         ];
 
         if (empty($data['code'])) $errors[] = 'Le code est obligatoire.';
@@ -282,11 +282,11 @@ include APP_ROOT . '/includes/header.php';
   <div class="table-responsive">
     <table class="table" id="dataTable">
       <thead>
-        <tr><th>Code</th><th>Nom</th><th>Filière / Niveau</th><th>Semestre</th><th>UE</th><th>Seuil</th><th>Formule</th><th>Coef.</th><th>Enseignant</th><th>Actions</th></tr>
+        <tr><th>Code</th><th>Nom</th><th>Filière / Niveau</th><th>Semestre</th><th>UE</th><th>Seuil</th><th>Coef.</th><th>Actions</th></tr>
       </thead>
       <tbody>
         <?php if (empty($matieres)): ?>
-          <tr><td colspan="10" class="text-center py-4 text-muted">Aucune matière</td></tr>
+          <tr><td colspan="8" class="text-center py-4 text-muted">Aucune matière</td></tr>
         <?php endif; ?>
         <?php foreach ($matieres as $m): ?>
         <tr>
@@ -307,21 +307,7 @@ include APP_ROOT . '/includes/header.php';
             <?= $m['ue_nom'] ? '<span class="badge bg-info text-dark">'.h($m['code_ue']).'</span>' : '<span class="text-muted">–</span>' ?>
           </td>
           <td class="text-center fs-sm"><?= (int)($m['seuil_reussite'] ?? 12) ?>/20</td>
-          <td>
-            <?php
-              $fc = $m['formule_calcul'] ?? 'pondere';
-              // ASB/VP always use demi_somme regardless of stored value
-              if (in_array(strtoupper($m['filiere_code'] ?? ''), ['ASB','VP'])) $fc = 'demi_somme';
-              [$fLabel, $fClass] = match($fc) {
-                  'demi_somme' => ['(CC+E)÷2',  'info'],
-                  'exam_seul'  => ['Exam seul', 'secondary'],
-                  default      => ['CC×40%+E×60%', 'primary'],
-              };
-            ?>
-            <span class="badge bg-<?= $fClass ?> fs-sm"><?= $fLabel ?></span>
-          </td>
           <td><span class="badge bg-primary"><?= $m['coefficient'] ?></span></td>
-          <td class="fs-sm"><?= h($m['enseignant_nom'] ?? '-') ?></td>
           <td>
             <div class="d-flex gap-1">
               <?php
@@ -454,9 +440,8 @@ include APP_ROOT . '/includes/header.php';
             <div class="col-md-8" id="formule_row_wrap">
               <label class="form-label">Formule de calcul de la moyenne <small class="text-muted">(UE)</small></label>
               <select name="formule_calcul" id="f_formule_calcul" class="form-select">
-                <option value="pondere">CC × 40 % + Examen × 60 % (pondéré)</option>
+                <option value="exam_seul" selected>Examen seul (sans CC)</option>
                 <option value="demi_somme">(Note de classe + Examen) ÷ 2 (moyenne simple)</option>
-                <option value="exam_seul">Examen seul (sans CC)</option>
               </select>
             </div>
             <div class="col-md-4">
@@ -466,15 +451,6 @@ include APP_ROOT . '/includes/header.php';
             <div class="col-md-4">
               <label class="form-label">Volume horaire (h)</label>
               <input type="number" name="volume_horaire" id="f_volume_horaire" class="form-control" min="0" step="1" value="0">
-            </div>
-            <div class="col-md-6">
-              <label class="form-label">Enseignant assigné</label>
-              <select name="enseignant_id" id="f_enseignant_id" class="form-select">
-                <option value="">-- Aucun --</option>
-                <?php foreach ($enseignants as $e): ?>
-                  <option value="<?= $e['id'] ?>"><?= h($e['prenom'].' '.$e['nom']) ?><?= $e['specialite'] ? ' ('.$e['specialite'].')' : '' ?></option>
-                <?php endforeach; ?>
-              </select>
             </div>
             <div class="col-md-3">
               <label class="form-label">Seuil réussite /20 <small class="text-muted">(défaut 12)</small></label>
@@ -688,7 +664,7 @@ function setFormMode(mode) {
     const el = document.getElementById('f_'+f);
     if (el) el.value = f === 'coefficient' ? '1' : (f === 'volume_horaire' ? '0' : '');
   });
-  ['filiere_id','niveau_id','semestre_id','semestre_num','enseignant_id','ue_id'].forEach(f => {
+  ['filiere_id','niveau_id','semestre_id','semestre_num','ue_id'].forEach(f => {
     const el = document.getElementById('f_'+f);
     if (el) el.value = '';
   });
@@ -708,7 +684,6 @@ function editMatiere(m) {
   document.getElementById('f_filiere_id').value = m.filiere_id || '';
   document.getElementById('f_coefficient').value = m.coefficient || '1';
   document.getElementById('f_volume_horaire').value = m.volume_horaire || '0';
-  document.getElementById('f_enseignant_id').value = m.enseignant_id || '';
   filterNiveaux(m.niveau_id || null);
   updateSemestreRow();
   // Semestre selon type de filière
@@ -718,7 +693,7 @@ function editMatiere(m) {
     document.getElementById('f_semestre_id').value = m.semestre_id || '';
   }
   const fc = document.getElementById('f_formule_calcul');
-  if (fc) fc.value = m.formule_calcul || 'pondere';
+  if (fc) fc.value = m.formule_calcul || 'exam_seul';
   const sr = document.getElementById('f_seuil_reussite');
   if (sr) sr.value = m.seuil_reussite ?? '12';
   const ue = document.getElementById('f_ue_id');

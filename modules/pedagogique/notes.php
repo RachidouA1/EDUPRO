@@ -3,7 +3,7 @@ require_once __DIR__ . '/../../config/config.php';
 requireLogin();
 requireRole(['admin', 'directeur', 'enseignant', 'scolarite', 'coordinateur']);
 
-$canEdit = hasRole('scolarite');
+$canEdit = hasRole(['admin', 'directeur', 'scolarite']);
 
 $db   = getDB();
 $user = getCurrentUser();
@@ -625,7 +625,7 @@ document.addEventListener('DOMContentLoaded', function () {
         <?php endif; ?>
         <th style="border:1px solid #888;padding:.3rem .4rem;text-align:center">Examen /20 <small>(<?= $examPct ?>)</small></th>
         <th style="border:1px solid #888;padding:.3rem .4rem;text-align:center;font-weight:700">Moy /20</th>
-        <th style="border:1px solid #888;padding:.3rem .4rem;text-align:center">Mention</th>
+        <th style="border:1px solid #888;padding:.3rem .4rem;text-align:center">Validation</th>
       </tr>
     </thead>
     <tbody>
@@ -633,13 +633,10 @@ document.addEventListener('DOMContentLoaded', function () {
         $pn   = $existingNotes[$pe['id']] ?? null;
         $ppn  = $prevNotes[$pe['id']]     ?? null;
         $pfin = $pn['note_finale'] ?? null;
-        $pMention = '–';
+        $pSeuil    = (float)($selectedMatiere['seuil_reussite'] ?? 10);
+        $pValidation = '–';
         if ($pfin !== null) {
-          if ($pfin >= 16)     $pMention = 'Très Bien';
-          elseif ($pfin >= 14) $pMention = 'Bien';
-          elseif ($pfin >= 12) $pMention = 'Assez Bien';
-          elseif ($pfin >= 10) $pMention = 'Passable';
-          else                  $pMention = 'Insuffisant';
+            $pValidation = $pfin >= $pSeuil ? '✓ Validé' : '✗ Non validé';
         }
       ?>
       <tr>
@@ -655,7 +652,7 @@ document.addEventListener('DOMContentLoaded', function () {
         <?php endif; ?>
         <td style="border:1px solid #ccc;padding:.3rem .4rem;text-align:center"><?= $pn && $pn['note_exam']    !== null ? $pn['note_exam']    : '–' ?></td>
         <td style="border:1px solid #ccc;padding:.3rem .4rem;text-align:center;font-weight:700"><?= $pfin !== null ? $pfin : '–' ?></td>
-        <td style="border:1px solid #ccc;padding:.3rem .4rem;text-align:center"><?= $pMention ?></td>
+        <td style="border:1px solid #ccc;padding:.3rem .4rem;text-align:center;font-weight:600;color:<?= $pfin !== null ? ($pfin >= $pSeuil ? '#155724' : '#721c24') : '#999' ?>"><?= $pValidation ?></td>
       </tr>
       <?php endforeach; ?>
     </tbody>
@@ -750,7 +747,7 @@ document.addEventListener('DOMContentLoaded', function () {
               <?php endif; ?>
               <th class="<?= ($showS1Ref && !$showCC) ? 'border-start' : '' ?>">Examen /20 <small class="text-muted">(<?= $examPct ?>)</small></th>
               <th>Moyenne /20</th>
-              <th>Mention</th>
+              <th>Validation</th>
               <?php if ($isNivSup): ?><th>Statut</th><?php endif; ?>
             </tr>
           </thead>
@@ -810,7 +807,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 </span>
               </td>
               <td id="mention_<?= $i ?>">
-                <?php if ($n && $n['note_finale'] !== null): ?><?= getMentionBadge((float)$n['note_finale']) ?><?php else: ?><span class="text-muted">–</span><?php endif; ?>
+                <?php if ($n && $n['note_finale'] !== null):
+                  $iVal = (float)$n['note_finale'] >= (float)($selectedMatiere['seuil_reussite'] ?? 10); ?>
+                  <span class="badge bg-<?= $iVal ? 'success' : 'danger' ?>">
+                    <?= $iVal ? '✓ Validé' : '✗ Non validé' ?>
+                  </span>
+                <?php else: ?><span class="text-muted">–</span><?php endif; ?>
               </td>
               <?php if ($isNivSup): ?>
               <td id="statut_<?= $i ?>">
@@ -855,6 +857,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <script>
 const FORMULE_ACTIVE = '<?= h($activeFormule) ?>';
 const IS_NIV_SUP     = <?= ($isNivSup ?? false) ? 'true' : 'false' ?>;
+const SEUIL_REUSSITE = <?= (float)($selectedMatiere['seuil_reussite'] ?? 10) ?>;
 
 function calcRow(row) {
   const ccEl   = document.querySelector(`.note-cc[data-row="${row}"]`);
@@ -878,14 +881,10 @@ function calcRow(row) {
   }
 
   if (fin !== null) {
-    const cls = fin >= 14 ? 'text-primary fw-bold' : fin >= 10 ? 'text-success' : 'text-danger';
+    const cls = fin >= SEUIL_REUSSITE ? 'text-success fw-bold' : 'text-danger fw-bold';
     finEl.innerHTML = `<span class="${cls}">${fin.toFixed(2)}</span>`;
-    let mention = 'Insuffisant', mCls = 'danger';
-    if      (fin >= 16) { mention = 'Très Bien';  mCls = 'primary'; }
-    else if (fin >= 14) { mention = 'Bien';        mCls = 'success'; }
-    else if (fin >= 12) { mention = 'Assez Bien';  mCls = 'info';    }
-    else if (fin >= 10) { mention = 'Passable';    mCls = 'warning'; }
-    menEl.innerHTML = `<span class="badge bg-${mCls}">${mention}</span>`;
+    const valide = fin >= SEUIL_REUSSITE;
+    menEl.innerHTML = `<span class="badge bg-${valide ? 'success' : 'danger'}">${valide ? '✓ Validé' : '✗ Non validé'}</span>`;
 
     // Statut niveau supérieur
     if (IS_NIV_SUP && stEl) {

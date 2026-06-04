@@ -59,7 +59,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (empty($errors)) {
-            $matricule = generateMatricule('ETU');
+            $matricule = sanitize($_POST['matricule'] ?? '');
+            if (empty($matricule)) {
+                $matricule = generateMatricule('ETU');
+            } else {
+                // Vérifier l'unicité du matricule saisi
+                $chk = $db->prepare("SELECT id FROM etudiants WHERE matricule = ?");
+                $chk->execute([$matricule]);
+                if ($chk->fetch()) $errors[] = 'Ce matricule est déjà utilisé.';
+            }
+        }
+        if (empty($errors)) {
 
             // INSERT étudiant (sans photo d'abord)
             if ($ecoleId > 0) {
@@ -250,11 +260,14 @@ include APP_ROOT . '/includes/header.php';
       </div>
 
       <div class="card mt-4">
-        <div class="card-body bg-light rounded">
-          <h6 class="fw-bold mb-2"><i class="fas fa-info-circle text-primary me-2"></i>Matricule automatique</h6>
-          <p class="text-muted mb-0" style="font-size:.85rem">
-            Un matricule unique sera généré automatiquement au format <strong>ETUAAnnnn</strong>.
-          </p>
+        <div class="card-header"><i class="fas fa-id-badge me-2 text-primary"></i>Matricule</div>
+        <div class="card-body">
+          <input type="text" name="matricule" class="form-control"
+                 placeholder="Laisser vide pour générer automatiquement"
+                 value="<?= h($_POST['matricule'] ?? '') ?>"
+                 style="text-transform:uppercase"
+                 oninput="this.value=this.value.toUpperCase()">
+          <div class="form-text">Facultatif — laissez vide pour un matricule automatique (<strong>ETUAAnnnn</strong>).</div>
         </div>
       </div>
     </div>

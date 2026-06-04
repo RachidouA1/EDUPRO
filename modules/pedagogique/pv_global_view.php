@@ -10,10 +10,10 @@ if (isset($_GET['export_excel'])) {
     header('Content-Disposition: attachment; filename="' . $fname . '"');
     header('Cache-Control: max-age=0');
 
-    // Compter toutes les colonnes matières + moy_ue + N° + Matricule + Étudiant + Moy + Décision
+    // N° + Matricule + Étudiant + (matières + Cr.req + Cr.acq + Moy UE) par UE + Moy.Gén + Cr.acq.G + Cr.req.G + Décision
     $nb_mat_total = 0;
     foreach ($ues as $ue) { $nb_mat_total += count($matieres_by_ue[$ue['id']] ?? []); }
-    $nb_cols = $nb_mat_total + count($ues) + 5;
+    $nb_cols = $nb_mat_total + count($ues) * 3 + 7;
 
     echo '<html><head><meta charset="UTF-8"></head><body>';
     echo '<table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;font-size:11px">';
@@ -29,17 +29,19 @@ if (isset($_GET['export_excel'])) {
     echo '<th rowspan="2">N°</th><th rowspan="2">Matricule</th><th rowspan="2">Étudiant</th>';
     foreach ($ues as $ue) {
         $nb = count($matieres_by_ue[$ue['id']] ?? []);
-        echo '<th colspan="' . ($nb + 1) . '">' . htmlspecialchars($ue['code_ue']) . ' – ' . htmlspecialchars($ue['nom']) . '</th>';
+        echo '<th colspan="' . ($nb + 3) . '">' . htmlspecialchars($ue['code_ue']) . ' – ' . htmlspecialchars($ue['nom']) . '</th>';
     }
-    echo '<th rowspan="2">Moy. Gén.</th><th rowspan="2">Décision</th></tr>';
+    echo '<th rowspan="2">Moy. Gén.</th><th rowspan="2">Cr. acq. Global</th><th rowspan="2">Cr. req. Global</th><th rowspan="2">Décision</th></tr>';
 
-    // En-tête matières
+    // En-tête matières + crédits UE
     echo '<tr style="background:#2e86ab;color:white">';
     foreach ($ues as $ue) {
         foreach ($matieres_by_ue[$ue['id']]??[] as $m) {
             echo '<th style="font-size:9px">' . htmlspecialchars($m['code']) . '<br>' . htmlspecialchars($m['nom']) . '<br>(Coef.' . $m['coefficient'] . ')</th>';
         }
         if (empty($matieres_by_ue[$ue['id']])) echo '<th>–</th>';
+        echo '<th style="background:#5d4037">Cr.<br>req.</th>';
+        echo '<th style="background:#1b5e20">Cr.<br>acq.</th>';
         echo '<th>Moy UE</th>';
     }
     echo '</tr>';
@@ -53,8 +55,10 @@ if (isset($_GET['export_excel'])) {
         echo '<td>' . strtoupper($e['nom']??'') . ' ' . ucfirst($e['prenom']??'') . '</td>';
 
         foreach ($ues as $ue) {
-            $moy_ue = $notes_data[$e['id']][$ue['id']]['moyenne_ue'] ?? 0;
-            $ue_val = $notes_data[$e['id']][$ue['id']]['valide']     ?? false;
+            $moy_ue    = $notes_data[$e['id']][$ue['id']]['moyenne_ue']    ?? 0;
+            $ue_val    = $notes_data[$e['id']][$ue['id']]['valide']         ?? false;
+            $cr_req_ue = $notes_data[$e['id']][$ue['id']]['credit_requis']  ?? 0;
+            $cr_acq_ue = $notes_data[$e['id']][$ue['id']]['credit_acquis']  ?? 0;
             foreach ($matieres_by_ue[$ue['id']]??[] as $m) {
                 $note_m = null; $note_v = false;
                 foreach ($notes_data[$e['id']][$ue['id']]['matieres']??[] as $nd) {
@@ -64,13 +68,20 @@ if (isset($_GET['export_excel'])) {
                 echo '<td style="text-align:center;background:' . $bg . '">' . ($note_m !== null ? number_format($note_m,1) : '–') . '</td>';
             }
             if (empty($matieres_by_ue[$ue['id']])) echo '<td>–</td>';
+            echo '<td style="text-align:center;background:#fff8e1;color:#5d4037;font-weight:600">' . number_format($cr_req_ue,1) . '</td>';
+            echo '<td style="text-align:center;background:#e8f5e9;color:#1b5e20;font-weight:600">' . number_format($cr_acq_ue,1) . '</td>';
             $ue_bg = $ue_val ? '#d4edda' : '#f8d7da';
             echo '<td style="text-align:center;font-weight:bold;background:' . $ue_bg . '">' . number_format($moy_ue,1) . '</td>';
         }
-        $moy_g = $notes_data[$e['id']]['moyenne_generale'] ?? 0;
-        $dec   = $notes_data[$e['id']]['decision'] ?? '';
-        $dec_bg = $dec === 'VALIDÉ' ? '#d4edda' : '#f8d7da';
+        $moy_g    = $notes_data[$e['id']]['moyenne_generale']    ?? 0;
+        $dec      = $notes_data[$e['id']]['decision']             ?? '';
+        $cr_acq_g = $notes_data[$e['id']]['credit_acquis_global'] ?? 0;
+        $cr_req_g = $notes_data[$e['id']]['credit_requis_global'] ?? 0;
+        $dec_bg   = $dec === 'VALIDÉ' ? '#d4edda' : '#f8d7da';
+        $acq_bg   = $cr_acq_g >= 30  ? '#c8e6c9' : '#ffcdd2';
         echo '<td style="text-align:center;font-weight:bold;background:#e3f2fd">' . number_format($moy_g,1) . '</td>';
+        echo '<td style="text-align:center;font-weight:bold;background:' . $acq_bg . '">' . number_format($cr_acq_g,1) . '</td>';
+        echo '<td style="text-align:center;background:#fff3e0;color:#e65100;font-weight:600">' . number_format($cr_req_g,1) . '</td>';
         echo '<td style="text-align:center;font-weight:bold;background:' . $dec_bg . '">' . $dec . '</td>';
         echo '</tr>';
     }
@@ -157,8 +168,15 @@ foreach ($ues as $ue) {
     .tbl-pv td.etu-col{text-align:left;padding-left:8px;font-weight:500;min-width:130px;white-space:nowrap;font-size:10px}
     .tbl-pv .mat-col{min-width:34px;max-width:44px}
     .tbl-pv .moy-ue-col{min-width:46px;font-weight:700;font-size:10px;border-left:1px solid #ddd}
+    .tbl-pv .cr-col{min-width:38px;font-weight:600;font-size:10px;border-left:1px solid #e0e0e0}
+    .tbl-pv .cr-glob-col{min-width:44px;font-weight:700;font-size:10px;border-left:1px solid #bbb}
     .tbl-pv .moy-gen-col{min-width:46px;font-weight:700;background:#e3f2fd!important;color:#0c5460;font-size:11px}
     .tbl-pv .dec-col{min-width:80px;font-weight:700;font-size:9.5px}
+    .cr-acq{background:#e8f5e9!important;color:#1b5e20}
+    .cr-req{background:#fff8e1!important;color:#5d4037}
+    .cr-acq-g{background:#c8e6c9!important;color:#1b5e20;font-size:11px}
+    .cr-req-g{background:#fff3e0!important;color:#e65100;font-size:11px}
+    .cr-insuf{background:#ffebee!important;color:#b71c1c!important}
 
     /* Couleurs validation */
     .nv{background:#d4edda!important;color:#155724;font-weight:600}
@@ -235,6 +253,8 @@ foreach ($ues as $ue) {
       .tbl-pv td.etu-col{min-width:90px;font-size:7.5px;padding-left:4px}
       .tbl-pv .mat-col{min-width:24px;max-width:34px}
       .tbl-pv .moy-ue-col{min-width:30px;font-size:7.5px}
+      .tbl-pv .cr-col{min-width:24px;font-size:7px}
+      .tbl-pv .cr-glob-col{min-width:28px;font-size:7.5px}
       .tbl-pv .moy-gen-col{min-width:30px;font-size:8px}
       .tbl-pv .dec-col{min-width:55px;font-size:7px}
 
@@ -324,11 +344,11 @@ foreach ($ues as $ue) {
           <th rowspan="2" style="text-align:left;padding-left:8px;min-width:130px">Étudiant</th>
           <?php foreach ($ues as $ue):
             $nb_mat = count($matieres_by_ue[$ue['id']] ?? []); ?>
-            <th colspan="<?= $nb_mat + 1 ?>" class="ue-sep">
+            <th colspan="<?= $nb_mat + 3 ?>" class="ue-sep">
               <?= h($ue['code_ue']) ?> – <?= h($ue['nom']) ?>
             </th>
           <?php endforeach; ?>
-          <th colspan="2" class="ue-sep" style="min-width:120px">Résultats</th>
+          <th colspan="4" class="ue-sep" style="min-width:200px">Résultats</th>
         </tr>
         <!-- Ligne 2 : noms de matières (tournés) + Moy UE + Moy. Gén. + Décision -->
         <tr class="mat-head">
@@ -342,9 +362,13 @@ foreach ($ues as $ue) {
             <?php if (empty($matieres_by_ue[$ue['id']])): ?>
               <th class="mat-col ue-sep"><span class="mat-label">–</span></th>
             <?php endif; ?>
+            <th class="cr-col" style="color:#fff;background:#1a5276">Cr.<br>req.</th>
+            <th class="cr-col" style="color:#fff;background:#1a5276">Cr.<br>acq.</th>
             <th class="moy-ue-col">Moy<br>UE</th>
           <?php endforeach; ?>
           <th class="moy-gen-col ue-sep" style="min-width:44px;color:#fff;background:#1a5276">Moy.<br>Gén.</th>
+          <th class="cr-glob-col" style="color:#fff;background:#2e7d32">Cr. acq.<br>Global</th>
+          <th class="cr-glob-col" style="color:#fff;background:#e65100">Cr. req.<br>Global</th>
           <th class="dec-col" style="min-width:70px;color:#fff;background:#1a5276">Décision</th>
         </tr>
       </thead>
@@ -372,16 +396,31 @@ foreach ($ues as $ue) {
             <?php if (empty($matieres_by_ue[$ue['id']])): ?>
               <td class="mat-col ue-sep nd">–</td>
             <?php endif; ?>
+            <?php
+              $cr_req_ue = $notes_data[$e['id']][$ue['id']]['credit_requis'] ?? 0;
+              $cr_acq_ue = $notes_data[$e['id']][$ue['id']]['credit_acquis'] ?? 0;
+            ?>
+            <td class="cr-col cr-req"><?= number_format($cr_req_ue,1) ?></td>
+            <td class="cr-col cr-acq"><?= number_format($cr_acq_ue,1) ?></td>
             <td class="moy-ue-col ue-sep <?= $ue_val ? 'nv' : 'nnv' ?>">
               <?= number_format($moy_ue,1) ?>
             </td>
           <?php endforeach; ?>
 
           <?php
-            $moy_g = $notes_data[$e['id']]['moyenne_generale'] ?? 0;
-            $dec   = $notes_data[$e['id']]['decision'] ?? '';
+            $moy_g     = $notes_data[$e['id']]['moyenne_generale']   ?? 0;
+            $dec       = $notes_data[$e['id']]['decision']            ?? '';
+            $cr_acq_g  = $notes_data[$e['id']]['credit_acquis_global'] ?? 0;
+            $cr_req_g  = $notes_data[$e['id']]['credit_requis_global'] ?? 0;
+            $cr_ok     = $cr_acq_g >= 30;
           ?>
           <td class="moy-gen-col ue-sep"><strong><?= number_format($moy_g,1) ?></strong></td>
+          <td class="cr-glob-col <?= $cr_ok ? 'cr-acq-g' : 'cr-insuf' ?>">
+            <strong><?= number_format($cr_acq_g,1) ?></strong>
+          </td>
+          <td class="cr-glob-col cr-req-g">
+            <?= number_format($cr_req_g,1) ?>
+          </td>
           <td class="dec-col <?= $dec === 'VALIDÉ' ? 'nv' : 'nnv' ?>">
             <?= h($dec) ?>
           </td>
@@ -396,7 +435,7 @@ foreach ($ues as $ue) {
           <td colspan="<?php
             $nc = 0;
             foreach ($ues as $ue) { $nc += count($matieres_by_ue[$ue['id']]??[]); }
-            echo $nc + count($ues) + 2;
+            echo $nc + count($ues) * 3 + 4;
           ?>" style="text-align:right;padding-right:8px;font-style:italic;color:#888;font-size:9px">
             Cachet et signature du Directeur
           </td>

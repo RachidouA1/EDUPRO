@@ -118,6 +118,23 @@ if (isset($_GET['export_excel'])) {
     .btn-print{background:#1a73e8;color:#fff}
     .btn-excel{background:linear-gradient(135deg,#1e7e34,#28a745);color:#fff}
     .btn-back{background:#6c757d;color:#fff}
+    .btn-switch{background:linear-gradient(135deg,#6f42c1,#e83e8c);color:#fff}
+
+    /* Panneau changement d'étudiant */
+    .switch-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1200;display:none}
+    .switch-panel{position:fixed;top:0;right:0;height:100%;width:340px;background:#fff;z-index:1201;
+      display:flex;flex-direction:column;box-shadow:-4px 0 24px rgba(0,0,0,.18);
+      transform:translateX(100%);transition:transform .25s ease}
+    .switch-panel.open{transform:translateX(0)}
+    .switch-panel-head{background:linear-gradient(135deg,#6f42c1,#e83e8c);color:#fff;
+      padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+    .switch-panel-head h5{margin:0;font-size:14px;font-weight:700}
+    .switch-panel-search{padding:12px 14px;border-bottom:1px solid #eee;flex-shrink:0}
+    .switch-panel-list{overflow-y:auto;flex:1}
+    .sw-opt{display:flex;align-items:center;gap:10px;padding:10px 14px;
+      border-bottom:1px solid #f5f5f5;cursor:pointer;transition:background .12s;text-decoration:none;color:inherit}
+    .sw-opt:hover{background:#f0f4f8}
+    .sw-opt.active{background:#ede7f6}
 
     @media print{
       body{background:#fff;padding:0}
@@ -265,7 +282,56 @@ $_pvNom  = strtoupper(getParam('etablissement_nom', 'École Privée de Santé Ib
   </div>
 </div>
 
+<!-- Overlay + panneau latéral -->
+<div class="switch-overlay" id="swOverlay" onclick="closeSwitchPanel()"></div>
+<div class="switch-panel" id="swPanel">
+  <div class="switch-panel-head">
+    <h5><i class="fas fa-exchange-alt me-2"></i>Changer d'étudiant</h5>
+    <button onclick="closeSwitchPanel()" style="background:none;border:none;color:#fff;font-size:1.2rem;cursor:pointer">&times;</button>
+  </div>
+  <div class="switch-panel-search">
+    <input type="text" id="swSearch" class="form-control form-control-sm"
+           placeholder="Matricule, nom, prénom, filière…"
+           oninput="filterSwOpts(this.value)">
+    <small class="text-muted" id="swCount" style="font-size:.78rem"></small>
+  </div>
+  <div class="switch-panel-list" id="swList">
+    <?php
+    // URL de base sans etudiant_id pour les liens de changement
+    $baseParams = array_diff_key($_GET, ['etudiant_id' => '', 'export_excel' => '']);
+    foreach ($etudiants_switch as $es):
+      $url = '?' . http_build_query(array_merge($baseParams, ['etudiant_id' => $es['id']]));
+      $isCurrent = (int)$es['id'] === (int)$etudiant_id;
+    ?>
+    <a href="<?= h($url) ?>" class="sw-opt <?= $isCurrent ? 'active' : '' ?>"
+       data-search="<?= strtolower(h($es['matricule'].' '.$es['nom'].' '.$es['prenom'].' '.$es['filiere_nom'])) ?>">
+      <div style="background:<?= $isCurrent ? '#6f42c1' : '#dc3545' ?>;color:#fff;border-radius:50%;
+                  width:36px;height:36px;display:flex;align-items:center;justify-content:center;
+                  font-size:.72rem;flex-shrink:0;font-weight:700">
+        <?= strtoupper(substr($es['prenom'],0,1).substr($es['nom'],0,1)) ?>
+      </div>
+      <div style="min-width:0;flex:1">
+        <div style="font-weight:600;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+          <?= h($es['nom'].' '.$es['prenom']) ?>
+          <?php if ($isCurrent): ?><span style="font-size:.7rem;background:#6f42c1;color:#fff;padding:1px 5px;border-radius:3px;margin-left:4px">actuel</span><?php endif; ?>
+        </div>
+        <div style="font-size:.73rem;color:#888">
+          <code><?= h($es['matricule']) ?></code>
+          &nbsp;·&nbsp;<?= h($es['filiere_code'] ?? $es['filiere_nom']) ?>
+        </div>
+      </div>
+    </a>
+    <?php endforeach; ?>
+    <div id="swEmpty" class="text-center text-muted py-4 d-none" style="font-size:.85rem">
+      <i class="fas fa-search-minus d-block mb-1"></i>Aucun résultat
+    </div>
+  </div>
+</div>
+
 <div class="btn-actions">
+  <button class="btn-switch" onclick="openSwitchPanel()">
+    <i class="fas fa-exchange-alt"></i> Changer d'étudiant
+  </button>
   <button class="btn-print" onclick="window.print()">
     <i class="fas fa-print"></i> Imprimer
   </button>
@@ -276,5 +342,38 @@ $_pvNom  = strtoupper(getParam('etablissement_nom', 'École Privée de Santé Ib
     <i class="fas fa-arrow-left"></i> Retour
   </a>
 </div>
+
+<script>
+const _swOpts  = document.querySelectorAll('#swList .sw-opt');
+const _swCount = document.getElementById('swCount');
+
+function _updateCount(vis) {
+  _swCount.textContent = vis + ' / ' + _swOpts.length + ' apprenant(s)';
+}
+_updateCount(_swOpts.length);
+
+function openSwitchPanel() {
+  document.getElementById('swPanel').classList.add('open');
+  document.getElementById('swOverlay').style.display = '';
+  document.getElementById('swSearch').value = '';
+  filterSwOpts('');
+  setTimeout(() => document.getElementById('swSearch').focus(), 260);
+}
+function closeSwitchPanel() {
+  document.getElementById('swPanel').classList.remove('open');
+  document.getElementById('swOverlay').style.display = 'none';
+}
+function filterSwOpts(q) {
+  const lq = q.toLowerCase().trim();
+  let vis = 0;
+  _swOpts.forEach(o => {
+    const ok = !lq || o.dataset.search.includes(lq);
+    o.style.display = ok ? '' : 'none';
+    if (ok) vis++;
+  });
+  document.getElementById('swEmpty').classList.toggle('d-none', vis > 0);
+  _updateCount(vis);
+}
+</script>
 </body>
 </html>
