@@ -1,0 +1,52 @@
+services:
+  app:
+    build: .
+    container_name: edupro_app
+    ports:
+      - "80:80"
+    volumes:
+      - .:/var/www/html/EDUPRO
+    environment:
+      DB_HOST: db
+      DB_NAME: ${DB_NAME:-edupro}
+      DB_USER: ${DB_USER:-root}
+      DB_PASS: ${DB_PASS:-edupro_pass}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: mysql:8.0
+    container_name: edupro_db
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASS:-edupro_pass}
+      MYSQL_DATABASE: ${DB_NAME:-edupro}
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASS:-edupro_pass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: edupro_phpmyadmin
+    ports:
+      - "8080:80"
+    environment:
+      PMA_HOST: db
+      PMA_USER: root
+      PMA_PASSWORD: ${DB_PASS:-edupro_pass}
+    depends_on:
+      - db
+    restart: unless-stopped
+
+volumes:
+  db_data:

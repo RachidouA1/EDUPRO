@@ -1,5 +1,6 @@
 # Secrets et configuration locale — ne jamais committer
 .claude/settings.local.json
+.env
 
 # Dépendances
 node_modules/
