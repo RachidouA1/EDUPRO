@@ -92,8 +92,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_params'])) {
                     $old = getParam('logo_path');
                     if ($old && file_exists(APP_ROOT . '/assets/' . $old)) unlink(APP_ROOT . '/assets/' . $old);
                     $ext  = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-                    move_uploaded_file($file['tmp_name'], $uploadDir . 'logo.' . $ext);
-                    setParam('logo_path', 'uploads/logo.' . $ext);
+                    $dest = $uploadDir . 'logo.' . $ext;
+                    if (!move_uploaded_file($file['tmp_name'], $dest)) {
+                        $errors[] = 'Impossible d\'enregistrer le logo. Vérifiez les permissions du dossier uploads.';
+                    } else {
+                        setParam('logo_path', 'uploads/logo.' . $ext);
+                    }
                 }
             }
         }
@@ -116,8 +120,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_params'])) {
                     $old = getParam('cachet_dg_path');
                     if ($old && file_exists(APP_ROOT . '/assets/' . $old)) unlink(APP_ROOT . '/assets/' . $old);
                     $ext  = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-                    move_uploaded_file($file['tmp_name'], $uploadDir . 'cachet_dg.' . $ext);
-                    setParam('cachet_dg_path', 'uploads/cachet_dg.' . $ext);
+                    $dest = $uploadDir . 'cachet_dg.' . $ext;
+                    if (!move_uploaded_file($file['tmp_name'], $dest)) {
+                        $errors[] = 'Impossible d\'enregistrer le cachet. Vérifiez les permissions du dossier uploads.';
+                    } else {
+                        setParam('cachet_dg_path', 'uploads/cachet_dg.' . $ext);
+                    }
                 }
             }
         }

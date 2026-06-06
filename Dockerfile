@@ -20,4 +20,10 @@ RUN chown -R www-data:www-data /var/www/html/EDUPRO \
 # Config Apache
 COPY docker/apache/000-default.conf /etc/apache2/sites-available/000-default.conf
 
+# Script de démarrage
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 EXPOSE 80
+
+ENTRYPOINT ["/entrypoint.sh"]

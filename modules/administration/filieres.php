@@ -28,19 +28,14 @@ $tcParams = [];
 if ($ecoleId > 0) { $tcSql .= " AND ecole_id=?"; $tcParams[] = $ecoleId; }
 $tcStmt = $db->prepare($tcSql); $tcStmt->execute($tcParams);
 $tcExists = (int)$tcStmt->fetchColumn();
-if (!$tcExists) {
-    if ($ecoleId > 0) {
-        $db->prepare("INSERT INTO filieres (code, nom, description, duree_annees, tronc_commun, actif, ecole_id)
-                   VALUES ('LSIO/TC', 'Tronc Commun — Infirmier & Sage-Femme',
-                           'Première année commune aux filières Infirmier et Sage-Femme (niveau supérieur)', 1, 1, 1, ?)")
-           ->execute([$ecoleId]);
-    } else {
-        $db->exec("INSERT INTO filieres (code, nom, description, duree_annees, tronc_commun, actif)
-                   VALUES ('LSIO/TC', 'Tronc Commun — Infirmier & Sage-Femme',
-                           'Première année commune aux filières Infirmier et Sage-Femme (niveau supérieur)', 1, 1, 1)");
-    }
+if (!$tcExists && $ecoleId > 0) {
+    $db->prepare("INSERT INTO filieres (code, nom, description, duree_annees, tronc_commun, actif, ecole_id)
+               VALUES ('LSIO/TC', 'Tronc Commun — Infirmier & Sage-Femme',
+                       'Première année commune aux filières Infirmier et Sage-Femme (niveau supérieur)', 1, 1, 1, ?)")
+       ->execute([$ecoleId]);
     $tcId = (int)$db->lastInsertId();
-    $db->prepare("INSERT INTO niveaux (filiere_id, nom, ordre) VALUES (?, 'Tronc Commun', 1)")->execute([$tcId]);
+    $db->prepare("INSERT INTO niveaux (ecole_id, filiere_id, nom, ordre) VALUES (?, ?, 'Tronc Commun', 1)")
+       ->execute([$ecoleId, $tcId]);
 }
 
 // Delete filiere
@@ -94,17 +89,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['action']) && hasRole
                     $newId = $db->lastInsertId();
 
                     // Auto-create levels
-                    $stmtN = $db->prepare("INSERT INTO niveaux (filiere_id, nom, ordre) VALUES (?,?,?)");
+                    $stmtN = $db->prepare("INSERT INTO niveaux (ecole_id, filiere_id, nom, ordre) VALUES (?,?,?,?)");
                     if ($troncCommun) {
-                        $stmtN->execute([$newId, 'Tronc Commun', 1]);
+                        $stmtN->execute([$ecoleId, $newId, 'Tronc Commun', 1]);
                     } elseif ($troncCommunId) {
                         // Année 1 = tronc commun → on crée à partir de l'Année 2
                         for ($i = 2; $i <= $duree + 1; $i++) {
-                            $stmtN->execute([$newId, 'Année ' . $i, $i]);
+                            $stmtN->execute([$ecoleId, $newId, 'Année ' . $i, $i]);
                         }
                     } else {
                         for ($i = 1; $i <= $duree; $i++) {
-                            $stmtN->execute([$newId, 'Année ' . $i, $i]);
+                            $stmtN->execute([$ecoleId, $newId, 'Année ' . $i, $i]);
                         }
                     }
                     $totalAns = $troncCommunId ? ($duree + 1) : $duree;
@@ -276,7 +271,7 @@ include APP_ROOT . '/includes/header.php';
 
         <!-- Niveaux -->
         <?php
-          $nStmt = $db->prepare("SELECT n.*, COUNT(e.id) as nb_etu FROM niveaux n LEFT JOIN etudiants e ON e.niveau_id=n.id AND e.statut='actif' WHERE n.filiere_id=? ORDER BY n.ordre");
+          $nStmt = $db->prepare("SELECT n.*, (SELECT COUNT(*) FROM etudiants e WHERE e.niveau_id = n.id AND e.statut = 'actif') as nb_etu FROM niveaux n WHERE n.filiere_id = ? ORDER BY n.ordre");
           $nStmt->execute([$f['id']]);
           $niveaux = $nStmt->fetchAll();
         ?>
