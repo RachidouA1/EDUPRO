@@ -56,19 +56,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <div class="input-group">
         <span class="input-group-text"><i class="fas fa-envelope text-muted"></i></span>
         <input type="email" name="identifiant" class="form-control"
-               placeholder="email@epsi.sn"
+               placeholder="Entrez votre adresse email"
                value="<?= h($_POST['identifiant'] ?? '') ?>" required autofocus autocomplete="username">
       </div>
+      <div class="form-text"><i class="fas fa-info-circle me-1"></i>Saisissez l'adresse email associée à votre compte.</div>
     </div>
     <div class="mb-4">
       <label class="form-label">Mot de passe</label>
       <div class="input-group">
         <span class="input-group-text"><i class="fas fa-lock text-muted"></i></span>
-        <input type="password" name="password" id="passwordInput" class="form-control" placeholder="••••••••" required>
+        <input type="password" name="password" id="passwordInput" class="form-control" placeholder="Entrez votre mot de passe" required>
         <button type="button" class="input-group-text" onclick="togglePassword()">
           <i class="fas fa-eye text-muted" id="eyeIcon"></i>
         </button>
       </div>
+      <div class="form-text"><i class="fas fa-info-circle me-1"></i>Saisissez votre mot de passe confidentiel.</div>
     </div>
     <button type="submit" class="btn btn-primary w-100 py-2 fw-600">
       <i class="fas fa-sign-in-alt me-2"></i>Se connecter
