@@ -1,0 +1,18 @@
+# Normalisation des fins de ligne
+* text=auto
+
+# Forcer LF pour les fichiers exécutés sous Linux (Docker)
+*.sh text eol=lf
+Dockerfile text eol=lf
+docker-compose.yml text eol=lf
+docker/apache/*.conf text eol=lf
+docker/mysql/*.sql text eol=lf
+
+# Fichiers binaires — pas de conversion
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary

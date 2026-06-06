@@ -22,7 +22,7 @@ COPY docker/apache/000-default.conf /etc/apache2/sites-available/000-default.con
 
 # Script de démarrage
 COPY docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 EXPOSE 80
 

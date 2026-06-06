@@ -2,11 +2,18 @@
 /**
  * EPSI – Migration : UE, PV Supérieur, seuil_reussite
  * Accéder via : http://localhost/EDUPRO/install/migrate_ue_pv.php
+ * En Docker  : définir ALLOW_INSTALL=1 dans l'environnement du container
  */
-define('DB_HOST', 'localhost');
-define('DB_USER', 'root');
-define('DB_PASS', '');
-define('DB_NAME', 'edupro');
+
+if (!getenv('ALLOW_INSTALL')) {
+    http_response_code(403);
+    die('<h1 style="font-family:sans-serif">403 Forbidden</h1><p>Définir la variable d\'environnement <code>ALLOW_INSTALL=1</code> pour accéder à cette page.</p>');
+}
+
+define('DB_HOST', getenv('DB_HOST') ?: 'localhost');
+define('DB_USER', getenv('DB_USER') ?: 'root');
+define('DB_PASS', getenv('DB_PASS') ?: '');
+define('DB_NAME', getenv('DB_NAME') ?: 'edupro');
 
 $messages = [];
 $errors   = [];

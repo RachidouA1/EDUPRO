@@ -170,9 +170,10 @@ HTML;
     ) ?>
 
     <?= sidebarGroup('admin-enseignants', 'Enseignants', 'fa-chalkboard-teacher',
-        ['/enseignants/'],
+        ['/enseignants/', '/salaires_enseignants'],
         '<a href="' . APP_URL . '/modules/enseignants/index.php" class="nav-link' . isActive('/enseignants/index','/enseignants/edit','/enseignants/paiements') . '"><i class="fas fa-chalkboard-teacher"></i> Liste des enseignants</a>'
       . '<a href="' . APP_URL . '/modules/enseignants/add.php" class="nav-link' . isActive('/enseignants/add') . '"><i class="fas fa-user-tie"></i> Nouvel enseignant</a>'
+      . '<a href="' . APP_URL . '/modules/administration/salaires_enseignants.php" class="nav-link' . isActive('/salaires_enseignants') . '"><i class="fas fa-money-bill-wave"></i> Calcul des salaires</a>'
     ) ?>
 
     <?= sidebarGroup('admin-pedagogie', 'Pédagogie', 'fa-book-open',
@@ -318,8 +319,9 @@ HTML;
     ) ?>
 
     <?= sidebarGroup('coord-suivi', 'Suivi &amp; Paiements', 'fa-tasks',
-        ['/suivi_cours', '/demandes_paiement'],
+        ['/suivi_cours', '/demandes_paiement', '/salaires_enseignants'],
         '<a href="' . APP_URL . '/modules/administration/suivi_cours.php" class="nav-link' . isActive('/suivi_cours') . '"><i class="fas fa-tasks"></i> Suivi des cours</a>'
+      . '<a href="' . APP_URL . '/modules/administration/salaires_enseignants.php" class="nav-link' . isActive('/salaires_enseignants') . '"><i class="fas fa-money-bill-wave"></i> Calcul des salaires</a>'
       . '<a href="' . APP_URL . '/modules/administration/demandes_paiement.php" class="nav-link d-flex align-items-center justify-content-between' . isActive('/demandes_paiement') . '"><span><i class="fas fa-file-invoice-dollar"></i> Demandes paiement</span>' . $coordPayBadge . '</a>'
     ) ?>
 
