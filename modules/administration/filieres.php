@@ -10,6 +10,7 @@ $errors  = [];
 // Inline migrations
 try { $db->exec("ALTER TABLE filieres ADD COLUMN tronc_commun TINYINT(1) NOT NULL DEFAULT 0"); } catch (PDOException $e) {}
 try { $db->exec("ALTER TABLE filieres ADD COLUMN tronc_commun_id INT NULL"); } catch (PDOException $e) {}
+try { $db->exec("ALTER TABLE filieres ADD COLUMN niveau_superieur TINYINT(1) NOT NULL DEFAULT 0"); } catch (PDOException $e) {}
 try { $db->exec("CREATE TABLE IF NOT EXISTS classes (
     id INT AUTO_INCREMENT PRIMARY KEY,
     filiere_id INT NOT NULL,
@@ -94,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['action']) && hasRole
                             : "Filière créée avec {$duree} niveau(x).");
                     setFlash('success', $msg);
                 } catch (PDOException $e) {
-                    $errors[] = 'Ce code existe déjà.';
+                    $errors[] = $e->getCode() === '23000' ? 'Ce code existe déjà pour cette école.' : 'Erreur : ' . $e->getMessage();
                 }
             }
             if (empty($errors)) redirect('/modules/administration/filieres.php');
