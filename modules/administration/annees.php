@@ -12,21 +12,21 @@ try { $db->exec("ALTER TABLE semestres ADD COLUMN niveau_superieur TINYINT(1) NO
 try { $db->exec("ALTER TABLE semestres ADD COLUMN semestre_num TINYINT NULL"); } catch (PDOException $e) {}
 
 /**
- * Crée automatiquement les semestres manquants pour une année :
- *  - 2 semestres standards (Semestre 1, Semestre 2)
- *  - 6 semestres niveau supérieur (S1 à S6)
+ * Crée automatiquement les semestres manquants pour une année.
+ * $type : 'standard'   → Semestre 1 & 2 uniquement
+ *         'superieur'  → S1 à S6 niveau supérieur uniquement
+ *         'both'       → Les deux types
  */
-function createSemestresForAnnee(PDO $db, int $anneeId): void {
-    // Semestres déjà présents pour cette année
+function createSemestresForAnnee(PDO $db, int $anneeId, string $type = 'standard'): void {
     $existing = $db->prepare("SELECT nom FROM semestres WHERE annee_id=?");
     $existing->execute([$anneeId]);
     $existingNames = array_column($existing->fetchAll(), 'nom');
 
-    $toCreate = [
-        // Standard (non niveau supérieur)
+    $standard = [
         ['nom' => 'Semestre 1', 'niv_sup' => 0, 'num' => null],
         ['nom' => 'Semestre 2', 'niv_sup' => 0, 'num' => null],
-        // Niveau supérieur S1-S6
+    ];
+    $superieur = [
         ['nom' => 'S1 – Niveau Supérieur', 'niv_sup' => 1, 'num' => 1],
         ['nom' => 'S2 – Niveau Supérieur', 'niv_sup' => 1, 'num' => 2],
         ['nom' => 'S3 – Niveau Supérieur', 'niv_sup' => 1, 'num' => 3],
@@ -34,6 +34,12 @@ function createSemestresForAnnee(PDO $db, int $anneeId): void {
         ['nom' => 'S5 – Niveau Supérieur', 'niv_sup' => 1, 'num' => 5],
         ['nom' => 'S6 – Niveau Supérieur', 'niv_sup' => 1, 'num' => 6],
     ];
+
+    $toCreate = match ($type) {
+        'superieur' => $superieur,
+        'both'      => array_merge($standard, $superieur),
+        default     => $standard,   // 'standard'
+    };
 
     $ins = $db->prepare("
         INSERT INTO semestres (annee_id, nom, niveau_superieur, semestre_num, actif)
@@ -98,7 +104,11 @@ if (isset($_GET['activate']) && isset($_GET['csrf']) && hasRole('admin') && veri
         $db->exec("UPDATE annees_academiques SET actif=0");
     }
     $db->prepare("UPDATE annees_academiques SET actif=1 WHERE id=?")->execute([$id]);
-    createSemestresForAnnee($db, $id);
+    // Infer type from semesters already attached to this year
+    $qInfer = $db->prepare("SELECT COUNT(*) FROM semestres WHERE annee_id=? AND niveau_superieur=1");
+    $qInfer->execute([$id]);
+    $inferType = ((int)$qInfer->fetchColumn() > 0) ? 'both' : 'standard';
+    createSemestresForAnnee($db, $id, $inferType);
     setFlash('success', 'Année académique activée — semestres vérifiés/créés automatiquement.');
     redirect('/modules/administration/annees.php');
 }
@@ -151,8 +161,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'an
                        ->execute([$libelle, $dateDebut ?: null, $dateFin ?: null]);
                 }
                 $newId = (int)$db->lastInsertId();
-                // Créer d'emblée tous les semestres pour la nouvelle année
-                createSemestresForAnnee($db, $newId);
+                $typeSem = in_array($_POST['type_semestres'] ?? '', ['standard','superieur','both'])
+                           ? $_POST['type_semestres'] : 'standard';
+                createSemestresForAnnee($db, $newId, $typeSem);
                 setFlash('success', 'Année créée — semestres initialisés automatiquement.');
             }
             redirect('/modules/administration/annees.php');
@@ -405,9 +416,9 @@ include APP_ROOT . '/includes/header.php';
 <div class="alert alert-info d-flex align-items-center gap-3 mt-3" style="font-size:.87rem">
   <i class="fas fa-info-circle fa-lg"></i>
   <div>
-    <strong>Semestres automatiques :</strong> à la création ou à l'activation d'une année, le système crée automatiquement
-    <strong>Semestre 1 &amp; 2</strong> (filières standard) et <strong>S1 à S6 – Niveau Supérieur</strong> (LSIO/TC, INF, SF)
-    s'ils n'existent pas encore.
+    <strong>Semestres automatiques :</strong> lors de la création d'une année, choisissez le type de semestres à générer —
+    <strong>Standard</strong> (Semestre 1 &amp; 2), <strong>Niveau supérieur</strong> (S1 à S6) ou <strong>les deux</strong>.
+    À l'activation, seuls les semestres manquants du type déjà présent sont ajoutés.
   </div>
 </div>
 <?php endif; ?>
@@ -429,6 +440,29 @@ include APP_ROOT . '/includes/header.php';
           <div class="row g-3">
             <div class="col-6"><label class="form-label">Date de début</label><input type="date" name="date_debut" id="an_debut" class="form-control"></div>
             <div class="col-6"><label class="form-label">Date de fin</label><input type="date" name="date_fin" id="an_fin" class="form-control"></div>
+          </div>
+          <div id="type_sem_block" class="mt-3">
+            <label class="form-label">Type de semestres à générer</label>
+            <div class="d-flex gap-3 flex-wrap">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="type_semestres" id="ts_standard" value="standard" checked>
+                <label class="form-check-label" for="ts_standard">
+                  Standard <span class="text-muted" style="font-size:.8rem">(Semestre 1 &amp; 2)</span>
+                </label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="type_semestres" id="ts_superieur" value="superieur">
+                <label class="form-check-label" for="ts_superieur">
+                  Niveau supérieur <span class="text-muted" style="font-size:.8rem">(S1 à S6)</span>
+                </label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="type_semestres" id="ts_both" value="both">
+                <label class="form-check-label" for="ts_both">
+                  Les deux types
+                </label>
+              </div>
+            </div>
           </div>
         </div>
         <div class="modal-footer">
@@ -484,8 +518,14 @@ function editAnnee(a) {
   document.getElementById('an_libelle').value  = a.libelle;
   document.getElementById('an_debut').value    = a.date_debut || '';
   document.getElementById('an_fin').value      = a.date_fin   || '';
+  document.getElementById('type_sem_block').style.display = 'none';
   new bootstrap.Modal(document.getElementById('anneeModal')).show();
 }
+document.getElementById('anneeModal').addEventListener('hidden.bs.modal', function () {
+  document.getElementById('an_edit_id').value = '';
+  document.getElementById('type_sem_block').style.display = '';
+  document.getElementById('ts_standard').checked = true;
+});
 function editSemestre(s) {
   document.getElementById('semModalTitle').textContent  = 'Modifier le semestre';
   document.getElementById('sem_edit_id').value   = s.id;
