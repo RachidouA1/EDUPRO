@@ -22,26 +22,10 @@ try { $db->exec("CREATE TABLE IF NOT EXISTS classes (
     FOREIGN KEY (niveau_id) REFERENCES niveaux(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); } catch (PDOException $e) {}
 
-// Create LSIO/TC if absent (scoped to current school)
-$tcSql = "SELECT COUNT(*) FROM filieres WHERE code='LSIO/TC'";
-$tcParams = [];
-if ($ecoleId > 0) { $tcSql .= " AND ecole_id=?"; $tcParams[] = $ecoleId; }
-$tcStmt = $db->prepare($tcSql); $tcStmt->execute($tcParams);
-$tcExists = (int)$tcStmt->fetchColumn();
-if (!$tcExists && $ecoleId > 0) {
-    $db->prepare("INSERT INTO filieres (code, nom, description, duree_annees, tronc_commun, actif, ecole_id)
-               VALUES ('LSIO/TC', 'Tronc Commun — Infirmier & Sage-Femme',
-                       'Première année commune aux filières Infirmier et Sage-Femme (niveau supérieur)', 1, 1, 1, ?)")
-       ->execute([$ecoleId]);
-    $tcId = (int)$db->lastInsertId();
-    $db->prepare("INSERT INTO niveaux (ecole_id, filiere_id, nom, ordre) VALUES (?, ?, 'Tronc Commun', 1)")
-       ->execute([$ecoleId, $tcId]);
-}
-
 // Delete filiere
 if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id']) && hasRole('admin') && verifyCsrfToken($_GET['csrf'] ?? '')) {
-    $db->prepare("UPDATE filieres SET actif=0 WHERE id=?")->execute([(int)$_GET['id']]);
-    setFlash('success', 'Filière désactivée.');
+    $db->prepare("DELETE FROM filieres WHERE id=?")->execute([(int)$_GET['id']]);
+    setFlash('success', 'Filière supprimée.');
     redirect('/modules/administration/filieres.php');
 }
 
@@ -243,7 +227,7 @@ include APP_ROOT . '/includes/header.php';
                     onclick="editFiliere(this)"
                     title="Modifier"><i class="fas fa-edit"></i></button>
             <?php if (hasRole('admin')): ?>
-            <a href="?action=delete&id=<?= $f['id'] ?>&csrf=<?= h(generateCsrfToken()) ?>" class="btn btn-icon btn-sm btn-outline-danger" onclick="return confirm('Désactiver cette filière ?')"><i class="fas fa-trash"></i></a>
+            <a href="?action=delete&id=<?= $f['id'] ?>&csrf=<?= h(generateCsrfToken()) ?>" class="btn btn-icon btn-sm btn-outline-danger" onclick="return confirm('Supprimer cette filière et tous ses niveaux ?')"><i class="fas fa-trash"></i></a>
             <?php endif; ?>
           </div>
           <?php endif; ?>
