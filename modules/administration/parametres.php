@@ -315,13 +315,10 @@ include APP_ROOT . '/includes/header.php';
           </div>
           <?php if ($logoUrl): ?>
           <hr class="my-3">
-          <form method="POST" class="d-inline" onsubmit="return confirm('Supprimer le logo ?')">
-            <input type="hidden" name="csrf" value="<?= h(generateCsrfToken()) ?>">
-            <input type="hidden" name="delete_logo" value="1">
-            <button type="submit" class="btn btn-outline-danger btn-sm w-100">
-              <i class="fas fa-trash me-2"></i>Supprimer le logo
-            </button>
-          </form>
+          <button type="button" class="btn btn-outline-danger btn-sm w-100"
+                  onclick="deleteParam('delete_logo', 'Supprimer le logo ?')">
+            <i class="fas fa-trash me-2"></i>Supprimer le logo
+          </button>
           <?php endif; ?>
           <div class="alert alert-info py-2 mt-3 mb-0" style="font-size:.8rem">
             <i class="fas fa-info-circle me-1"></i>
@@ -372,13 +369,10 @@ include APP_ROOT . '/includes/header.php';
 
           <?php if ($cachetUrl): ?>
           <hr class="my-3">
-          <form method="POST" class="d-inline" onsubmit="return confirm('Supprimer le cachet et la signature ?')">
-            <input type="hidden" name="csrf" value="<?= h(generateCsrfToken()) ?>">
-            <input type="hidden" name="delete_cachet" value="1">
-            <button type="submit" class="btn btn-outline-danger btn-sm w-100">
-              <i class="fas fa-trash me-2"></i>Supprimer le cachet / signature
-            </button>
-          </form>
+          <button type="button" class="btn btn-outline-danger btn-sm w-100"
+                  onclick="deleteParam('delete_cachet', 'Supprimer le cachet et la signature ?')">
+            <i class="fas fa-trash me-2"></i>Supprimer le cachet / signature
+          </button>
           <?php endif; ?>
 
           <div class="alert alert-info py-2 mt-3 mb-0" style="font-size:.8rem">
@@ -412,6 +406,19 @@ include APP_ROOT . '/includes/header.php';
 </form>
 
 <script>
+const _csrf = <?= json_encode(generateCsrfToken()) ?>;
+
+function deleteParam(field, message) {
+  if (!confirm(message)) return;
+  const f = document.createElement('form');
+  f.method = 'POST';
+  f.innerHTML =
+    '<input type="hidden" name="csrf" value="' + _csrf + '">' +
+    '<input type="hidden" name="' + field + '" value="1">';
+  document.body.appendChild(f);
+  f.submit();
+}
+
 function syncColor(pickerId, hexId) {
   const picker = document.getElementById(pickerId);
   const hex    = document.getElementById(hexId);

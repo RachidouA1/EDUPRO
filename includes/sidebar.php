@@ -81,7 +81,7 @@ HTML;
       <div class="brand-icon"><i class="fas fa-school"></i></div>
     <?php endif; ?>
     <div class="brand-text">
-      <strong><?= h(mb_strtoupper(mb_substr($sidebarNom, 0, 20))) ?></strong>
+      <strong style="white-space:normal;word-break:break-word;line-height:1.2"><?= h(mb_strtoupper($sidebarNom)) ?></strong>
       <small><?= h($sidebarSlogan) ?></small>
     </div>
   </a>
@@ -92,7 +92,7 @@ HTML;
     <?php $ecoleCtx = getCurrentEcole(); ?>
     <?php if ($ecoleCtx): ?>
     <div style="background:#6200ea22;border:1px solid #6200ea44;border-radius:8px;padding:.4rem .7rem;font-size:.72rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem">
-      <span style="color:#9c27b0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+      <span style="color:#9c27b0;font-weight:600;word-break:break-word;line-height:1.3">
         <i class="fas fa-school me-1"></i><?= h($ecoleCtx['nom']) ?>
       </span>
       <a href="<?= APP_URL ?>/modules/superadmin/switch_ecole.php?id=0&csrf=<?= h(generateCsrfToken()) ?>"
