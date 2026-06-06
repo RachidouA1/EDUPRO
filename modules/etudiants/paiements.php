@@ -2,9 +2,10 @@
 require_once __DIR__ . '/../../config/config.php';
 requireLogin();
 
-$db   = getDB();
-$user = getCurrentUser();
-$id   = (int)($_GET['id'] ?? 0);
+$db      = getDB();
+$user    = getCurrentUser();
+$ecoleId = getEcoleId();
+$id      = (int)($_GET['id'] ?? 0);
 
 // Migrations
 try { $db->exec("ALTER TABLE paiements_etudiants ADD COLUMN numero_recu VARCHAR(20) NULL DEFAULT NULL"); } catch (PDOException $e) {}
@@ -85,8 +86,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add' 
                     VALUES (?,?,1,?,?,?,?,?)")
                    ->execute([$newPayId, $id, $montantPaye, $datePay, $mode, $reference ?: null, $user['id']]);
 
-                $db->prepare("INSERT INTO recettes (annee_id, date_recette, libelle, categorie, montant, mode_paiement, created_by) VALUES (?,?,?,?,?,?,?)")
-                   ->execute([$anneeId ?: null, $datePay, $libelle . ' – ' . $etudiant['nom'] . ' ' . $etudiant['prenom'], 'scolarite', $montantPaye, $mode, $user['id']]);
+                if ($ecoleId > 0) {
+                    $db->prepare("INSERT INTO recettes (annee_id, date_recette, libelle, categorie, montant, mode_paiement, created_by, ecole_id) VALUES (?,?,?,?,?,?,?,?)")
+                       ->execute([$anneeId ?: null, $datePay, $libelle . ' – ' . $etudiant['nom'] . ' ' . $etudiant['prenom'], 'scolarite', $montantPaye, $mode, $user['id'], $ecoleId]);
+                } else {
+                    $db->prepare("INSERT INTO recettes (annee_id, date_recette, libelle, categorie, montant, mode_paiement, created_by) VALUES (?,?,?,?,?,?,?)")
+                       ->execute([$anneeId ?: null, $datePay, $libelle . ' – ' . $etudiant['nom'] . ' ' . $etudiant['prenom'], 'scolarite', $montantPaye, $mode, $user['id']]);
+                }
             }
 
             setFlash('success', 'Paiement enregistré.');
@@ -136,10 +142,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'verse
                    ->execute([$payId, $id, $numV, $montantVerse, $datePay, $mode, $reference ?: null, $user['id']]);
 
                 // Recette
-                $db->prepare("INSERT INTO recettes (annee_id, date_recette, libelle, categorie, montant, mode_paiement, created_by) VALUES (?,?,?,?,?,?,?)")
-                   ->execute([$existing['annee_id'], $datePay,
-                              'Versement ' . $numV . ' – ' . $existing['libelle'] . ' – ' . $etudiant['nom'] . ' ' . $etudiant['prenom'],
-                              'scolarite', $montantVerse, $mode, $user['id']]);
+                if ($ecoleId > 0) {
+                    $db->prepare("INSERT INTO recettes (annee_id, date_recette, libelle, categorie, montant, mode_paiement, created_by, ecole_id) VALUES (?,?,?,?,?,?,?,?)")
+                       ->execute([$existing['annee_id'], $datePay,
+                                  'Versement ' . $numV . ' – ' . $existing['libelle'] . ' – ' . $etudiant['nom'] . ' ' . $etudiant['prenom'],
+                                  'scolarite', $montantVerse, $mode, $user['id'], $ecoleId]);
+                } else {
+                    $db->prepare("INSERT INTO recettes (annee_id, date_recette, libelle, categorie, montant, mode_paiement, created_by) VALUES (?,?,?,?,?,?,?)")
+                       ->execute([$existing['annee_id'], $datePay,
+                                  'Versement ' . $numV . ' – ' . $existing['libelle'] . ' – ' . $etudiant['nom'] . ' ' . $etudiant['prenom'],
+                                  'scolarite', $montantVerse, $mode, $user['id']]);
+                }
 
                 $msg = $newStatut === 'complet'
                     ? 'Versement enregistré. Le paiement est maintenant soldé.'

@@ -98,14 +98,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['notes'])) {
 }
 
 // ── Build matière list ────────────────────────────────────────────────────────
+$ecoleId = getEcoleId();
 $mQuery = "SELECT m.*, f.nom as filiere_nom, f.code as filiere_code,
                   f.niveau_superieur as filiere_niveau_sup,
                   n.nom as niveau_nom, n.ordre as niveau_ordre
            FROM matieres m
            LEFT JOIN filieres f ON f.id=m.filiere_id
            LEFT JOIN niveaux  n ON n.id=m.niveau_id
-           WHERE m.actif=1";
+           WHERE 1=1";
 $mParams = [];
+if ($ecoleId > 0) {
+    $mQuery  .= " AND m.ecole_id=?";
+    $mParams[] = $ecoleId;
+}
 if ($user['role'] === 'enseignant') {
     $mQuery  .= " AND m.enseignant_id IN (SELECT id FROM enseignants WHERE email=?)";
     $mParams[] = $user['email'];

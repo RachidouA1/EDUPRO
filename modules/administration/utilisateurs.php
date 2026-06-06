@@ -17,8 +17,8 @@ $filieres = getFilieres();
 if (isset($_GET['action']) && $_GET['action'] === 'delete' && verifyCsrfToken($_GET['csrf'] ?? '')) {
     $delId = (int)$_GET['id'];
     if ($delId !== $user['id']) {
-        $db->prepare("UPDATE users SET actif=0 WHERE id=?")->execute([$delId]);
-        setFlash('success', 'Utilisateur désactivé.');
+        $db->prepare("DELETE FROM users WHERE id=?")->execute([$delId]);
+        setFlash('success', 'Utilisateur supprimé.');
     }
     redirect('/modules/administration/utilisateurs.php');
 }

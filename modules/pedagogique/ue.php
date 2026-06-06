@@ -3,10 +3,11 @@ require_once __DIR__ . '/../../config/config.php';
 requireLogin();
 requireRole(['admin', 'directeur']);
 
-$db     = getDB();
-$errors = [];
-$action = sanitize($_GET['action'] ?? 'list');
-$id     = (int)($_GET['id'] ?? 0);
+$db      = getDB();
+$ecoleId = getEcoleId();
+$errors  = [];
+$action  = sanitize($_GET['action'] ?? 'list');
+$id      = (int)($_GET['id'] ?? 0);
 
 // Ensure columns exist (idempotent)
 try { $db->exec("ALTER TABLE matieres ADD COLUMN ue_id INT NULL"); } catch (PDOException $e) {}
@@ -14,13 +15,13 @@ try { $db->exec("ALTER TABLE matieres ADD COLUMN seuil_reussite INT NOT NULL DEF
 
 // Delete (soft)
 if ($action === 'delete' && $id && hasRole('admin') && verifyCsrfToken($_GET['csrf'] ?? '')) {
-    $check = $db->prepare("SELECT COUNT(*) FROM matieres WHERE ue_id = ? AND actif = 1");
-    $check->execute([$id]);
+    $check = $db->prepare("SELECT COUNT(*) FROM matieres WHERE ue_id = ? AND ecole_id = ?");
+    $check->execute([$id, $ecoleId]);
     if ($check->fetchColumn() > 0) {
-        setFlash('error', 'Impossible de désactiver : des matières actives sont liées à cette UE.');
+        setFlash('error', 'Impossible de supprimer : des matières sont liées à cette UE.');
     } else {
-        $db->prepare("UPDATE ue SET actif=0 WHERE id=?")->execute([$id]);
-        setFlash('success', 'UE désactivée.');
+        $db->prepare("DELETE FROM ue WHERE id=? AND ecole_id=?")->execute([$id, $ecoleId]);
+        setFlash('success', 'UE supprimée.');
     }
     redirect('/modules/pedagogique/ue.php');
 }
@@ -51,13 +52,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && hasRole('admin')) {
                                   $data['coefficient'],$data['credit'],$data['filiere_id'],$editId]);
                     setFlash('success', 'UE modifiée avec succès.');
                 } else {
-                    $db->prepare("INSERT INTO ue (nom,code_ue,semestre_num,coefficient,credit,filiere_id) VALUES (?,?,?,?,?,?)")
-                       ->execute([$data['nom'],$data['code_ue'],$data['semestre_num'],
+                    $db->prepare("INSERT INTO ue (ecole_id,nom,code_ue,semestre_num,coefficient,credit,filiere_id) VALUES (?,?,?,?,?,?,?)")
+                       ->execute([$ecoleId,$data['nom'],$data['code_ue'],$data['semestre_num'],
                                   $data['coefficient'],$data['credit'],$data['filiere_id']]);
                     setFlash('success', 'UE ajoutée avec succès.');
                 }
             } catch (PDOException $e) {
-                $errors[] = 'Ce code UE existe déjà.';
+                $errors[] = $e->getCode() === '23000' ? 'Ce code UE existe déjà pour cette filière.' : 'Erreur : ' . $e->getMessage();
             }
             if (empty($errors)) redirect('/modules/pedagogique/ue.php');
         }
@@ -67,14 +68,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && hasRole('admin')) {
 // Filters & list
 $fFilter = (int)($_GET['filiere_id'] ?? 0);
 $sFilter = (int)($_GET['semestre_num'] ?? 0);
-$where   = ['u.actif=1'];
-$params  = [];
+$where   = ['u.ecole_id=?'];
+$params  = [$ecoleId];
 if ($fFilter) { $where[] = 'u.filiere_id=?'; $params[] = $fFilter; }
 if ($sFilter) { $where[] = 'u.semestre_num=?'; $params[] = $sFilter; }
 
 $stmt = $db->prepare("
     SELECT u.*, f.nom as filiere_nom, f.code as filiere_code,
-           (SELECT COUNT(*) FROM matieres m WHERE m.ue_id=u.id AND m.actif=1) as nb_matieres
+           (SELECT COUNT(*) FROM matieres m WHERE m.ue_id=u.id AND m.ecole_id=u.ecole_id) as nb_matieres
     FROM ue u
     LEFT JOIN filieres f ON f.id = u.filiere_id
     WHERE " . implode(' AND ', $where) . "
@@ -190,8 +191,8 @@ include APP_ROOT . '/includes/header.php';
               </button>
               <a href="?action=delete&id=<?= $u['id'] ?>&csrf=<?= h(generateCsrfToken()) ?>"
                  class="btn btn-icon btn-sm btn-outline-danger"
-                 onclick="return confirm('Désactiver cette UE ?')"
-                 title="Désactiver" data-bs-toggle="tooltip">
+                 onclick="return confirm('Supprimer cette UE ?')"
+                 title="Supprimer" data-bs-toggle="tooltip">
                 <i class="fas fa-trash"></i>
               </a>
             </div>

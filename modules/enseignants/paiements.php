@@ -3,8 +3,9 @@ require_once __DIR__ . '/../../config/config.php';
 requireLogin();
 requireRole(['admin', 'comptable']);
 
-$db  = getDB();
-$id  = (int)($_GET['id'] ?? 0);
+$db      = getDB();
+$ecoleId = getEcoleId();
+$id      = (int)($_GET['id'] ?? 0);
 
 $stmt = $db->prepare("SELECT * FROM enseignants WHERE id = ?");
 $stmt->execute([$id]);
@@ -36,8 +37,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                ->execute([$id, $anneeId ?: null, $libelle, $type, $montant, $datePay, $mode]);
 
             // Record as depense
-            $db->prepare("INSERT INTO depenses (annee_id, date_depense, libelle, categorie, montant, beneficiaire, mode_paiement) VALUES (?,?,?,?,?,?,?)")
-               ->execute([$anneeId ?: null, $datePay, $libelle . ' – ' . $ens['nom'].' '.$ens['prenom'], 'salaire', $montant, $ens['nom'].' '.$ens['prenom'], $mode]);
+            if ($ecoleId > 0) {
+                $db->prepare("INSERT INTO depenses (annee_id, date_depense, libelle, categorie, montant, beneficiaire, mode_paiement, ecole_id) VALUES (?,?,?,?,?,?,?,?)")
+                   ->execute([$anneeId ?: null, $datePay, $libelle . ' – ' . $ens['nom'].' '.$ens['prenom'], 'salaire', $montant, $ens['nom'].' '.$ens['prenom'], $mode, $ecoleId]);
+            } else {
+                $db->prepare("INSERT INTO depenses (annee_id, date_depense, libelle, categorie, montant, beneficiaire, mode_paiement) VALUES (?,?,?,?,?,?,?)")
+                   ->execute([$anneeId ?: null, $datePay, $libelle . ' – ' . $ens['nom'].' '.$ens['prenom'], 'salaire', $montant, $ens['nom'].' '.$ens['prenom'], $mode]);
+            }
 
             setFlash('success', 'Paiement enregistré.');
             redirect('/modules/enseignants/paiements.php?id=' . $id);

@@ -3,9 +3,10 @@ require_once __DIR__ . '/../../config/config.php';
 requireLogin();
 requireRole(['coordinateur', 'admin', 'comptable']);
 
-$db   = getDB();
-$user = getCurrentUser();
-$role = $user['role'];
+$db      = getDB();
+$user    = getCurrentUser();
+$ecoleId = getEcoleId();
+$role    = $user['role'];
 
 // ── POST handlers ──────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -54,14 +55,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                        ->execute([$dem['ens_id'], $anneeId, $libelle, $montant, $datePay, $mode]);
 
                     // Create depense
-                    $db->prepare("INSERT INTO depenses
-                                    (annee_id, date_depense, libelle, categorie, montant, beneficiaire, mode_paiement, notes)
-                                  VALUES (?,?,?,'salaire',?,?,?,?)")
-                       ->execute([$anneeId, $datePay,
-                                  $libelle . ' – ' . $dem['ens_nom'],
-                                  $montant, $dem['ens_nom'], $mode,
-                                  'Vacation – ' . $dem['total_heures'] . 'h du '
-                                  . formatDate($dem['date_debut']) . ' au ' . formatDate($dem['date_fin'])]);
+                    if ($ecoleId > 0) {
+                        $db->prepare("INSERT INTO depenses (annee_id, date_depense, libelle, categorie, montant, beneficiaire, mode_paiement, notes, ecole_id) VALUES (?,?,?,'salaire',?,?,?,?,?)")
+                           ->execute([$anneeId, $datePay, $libelle . ' – ' . $dem['ens_nom'], $montant, $dem['ens_nom'], $mode,
+                                      'Vacation – ' . $dem['total_heures'] . 'h du ' . formatDate($dem['date_debut']) . ' au ' . formatDate($dem['date_fin']), $ecoleId]);
+                    } else {
+                        $db->prepare("INSERT INTO depenses (annee_id, date_depense, libelle, categorie, montant, beneficiaire, mode_paiement, notes) VALUES (?,?,?,'salaire',?,?,?,?)")
+                           ->execute([$anneeId, $datePay, $libelle . ' – ' . $dem['ens_nom'], $montant, $dem['ens_nom'], $mode,
+                                      'Vacation – ' . $dem['total_heures'] . 'h du ' . formatDate($dem['date_debut']) . ' au ' . formatDate($dem['date_fin'])]);
+                    }
 
                     // Mark demande as traite
                     $db->prepare("UPDATE demandes_paiement_enseignant

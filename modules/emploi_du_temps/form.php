@@ -3,9 +3,10 @@ require_once __DIR__ . '/../../config/config.php';
 requireLogin();
 requireRole(['admin', 'coordinateur']);
 
-$db     = getDB();
-$user   = getCurrentUser();
-$errors = [];
+$db      = getDB();
+$user    = getCurrentUser();
+$ecoleId = getEcoleId();
+$errors  = [];
 
 // Slots config (hardcoded per academic schedule)
 $JOURS = ['lundi','mardi','mercredi','jeudi','vendredi','samedi'];
@@ -52,31 +53,36 @@ $activeFiliereId = $coordFiliereId ?: (int)($emploi['filiere_id'] ?? $_GET['fili
 // Load matières filtered to filière
 $matieres = [];
 if ($activeFiliereId) {
-    $ms = $db->prepare("
-        SELECT m.id, m.code, m.nom, n.nom as niveau_nom
-        FROM matieres m LEFT JOIN niveaux n ON n.id=m.niveau_id
-        WHERE m.filiere_id=? AND m.actif=1
-        ORDER BY m.nom
-    ");
-    $ms->execute([$activeFiliereId]);
+    if ($ecoleId > 0) {
+        $ms = $db->prepare("SELECT m.id, m.code, m.nom, n.nom as niveau_nom FROM matieres m LEFT JOIN niveaux n ON n.id=m.niveau_id WHERE m.filiere_id=? AND m.ecole_id=? ORDER BY m.nom");
+        $ms->execute([$activeFiliereId, $ecoleId]);
+    } else {
+        $ms = $db->prepare("SELECT m.id, m.code, m.nom, n.nom as niveau_nom FROM matieres m LEFT JOIN niveaux n ON n.id=m.niveau_id WHERE m.filiere_id=? ORDER BY m.nom");
+        $ms->execute([$activeFiliereId]);
+    }
     $matieres = $ms->fetchAll();
 }
 
 $filieres    = getFilieres();
 $niveaux     = getNiveaux($activeFiliereId ?: null);
 $annees      = getAnneesAcademiques();
-$enseignants = $db->query("SELECT id, nom, prenom, specialite FROM enseignants WHERE actif=1 ORDER BY nom")->fetchAll();
+if ($ecoleId > 0) {
+    $ensStmt = $db->prepare("SELECT id, nom, prenom, specialite FROM enseignants WHERE ecole_id=? AND actif=1 ORDER BY nom");
+    $ensStmt->execute([$ecoleId]);
+    $enseignants = $ensStmt->fetchAll();
+} else {
+    $enseignants = $db->query("SELECT id, nom, prenom, specialite FROM enseignants WHERE actif=1 ORDER BY nom")->fetchAll();
+}
 
 $classes = [];
 if ($activeFiliereId) {
-    $cs = $db->prepare("
-        SELECT c.id, c.nom, c.niveau_id, n.nom as niveau_nom, n.ordre
-        FROM classes c
-        LEFT JOIN niveaux n ON n.id = c.niveau_id
-        WHERE c.filiere_id = ? AND c.actif = 1
-        ORDER BY COALESCE(n.ordre, 9999), c.nom
-    ");
-    $cs->execute([$activeFiliereId]);
+    if ($ecoleId > 0) {
+        $cs = $db->prepare("SELECT c.id, c.nom, c.niveau_id, n.nom as niveau_nom, n.ordre FROM classes c LEFT JOIN niveaux n ON n.id = c.niveau_id WHERE c.filiere_id = ? AND n.ecole_id = ? ORDER BY COALESCE(n.ordre, 9999), c.nom");
+        $cs->execute([$activeFiliereId, $ecoleId]);
+    } else {
+        $cs = $db->prepare("SELECT c.id, c.nom, c.niveau_id, n.nom as niveau_nom, n.ordre FROM classes c LEFT JOIN niveaux n ON n.id = c.niveau_id WHERE c.filiere_id = ? ORDER BY COALESCE(n.ordre, 9999), c.nom");
+        $cs->execute([$activeFiliereId]);
+    }
     $classes = $cs->fetchAll();
 }
 
@@ -143,8 +149,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 if (!empty($errors) && !$coordFiliereId) {
     $fId = (int)($_POST['filiere_id'] ?? 0);
     if ($fId) {
-        $ms2 = $db->prepare("SELECT id, code, nom FROM matieres WHERE filiere_id=? AND actif=1 ORDER BY nom");
-        $ms2->execute([$fId]);
+        if ($ecoleId > 0) {
+            $ms2 = $db->prepare("SELECT id, code, nom FROM matieres WHERE filiere_id=? AND ecole_id=? ORDER BY nom");
+            $ms2->execute([$fId, $ecoleId]);
+        } else {
+            $ms2 = $db->prepare("SELECT id, code, nom FROM matieres WHERE filiere_id=? ORDER BY nom");
+            $ms2->execute([$fId]);
+        }
         $matieres = $ms2->fetchAll();
     }
 }

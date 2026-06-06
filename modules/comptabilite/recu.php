@@ -3,9 +3,10 @@ require_once __DIR__ . '/../../config/config.php';
 requireLogin();
 requireRole(['admin', 'comptable']);
 
-$db   = getDB();
-$user = getCurrentUser();
-$errors = [];
+$db      = getDB();
+$user    = getCurrentUser();
+$ecoleId = getEcoleId();
+$errors  = [];
 
 // Ensure numero_recu column exists (idempotent)
 try {
@@ -398,11 +399,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_v
             $etuRow = $db->prepare("SELECT nom, prenom FROM etudiants WHERE id=?");
             $etuRow->execute([$etuId]);
             $etuRow = $etuRow->fetch();
-            $db->prepare("INSERT INTO recettes (annee_id, date_recette, libelle, categorie, montant, mode_paiement, reference, created_by)
-                VALUES (?,?,?,?,?,?,?,?)")
-               ->execute([$anneeId ?: null, $date,
-                   $libelle . ' – ' . ($etuRow['prenom'] ?? '') . ' ' . ($etuRow['nom'] ?? ''),
-                   'scolarite', $verse, $mode, $numRecu, $user['id']]);
+            if ($ecoleId > 0) {
+                $db->prepare("INSERT INTO recettes (annee_id, date_recette, libelle, categorie, montant, mode_paiement, reference, created_by, ecole_id) VALUES (?,?,?,?,?,?,?,?,?)")
+                   ->execute([$anneeId ?: null, $date,
+                       $libelle . ' – ' . ($etuRow['prenom'] ?? '') . ' ' . ($etuRow['nom'] ?? ''),
+                       'scolarite', $verse, $mode, $numRecu, $user['id'], $ecoleId]);
+            } else {
+                $db->prepare("INSERT INTO recettes (annee_id, date_recette, libelle, categorie, montant, mode_paiement, reference, created_by) VALUES (?,?,?,?,?,?,?,?)")
+                   ->execute([$anneeId ?: null, $date,
+                       $libelle . ' – ' . ($etuRow['prenom'] ?? '') . ' ' . ($etuRow['nom'] ?? ''),
+                       'scolarite', $verse, $mode, $numRecu, $user['id']]);
+            }
 
             redirect('/modules/comptabilite/recu.php?print=' . $payId . '&auto_print=1');
         } else {
@@ -451,11 +458,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add')
                 $etuRow = $db->prepare("SELECT nom, prenom FROM etudiants WHERE id=?");
                 $etuRow->execute([$etuId]);
                 $etuRow = $etuRow->fetch();
-                $db->prepare("INSERT INTO recettes (annee_id, date_recette, libelle, categorie, montant, mode_paiement, reference, created_by)
-                    VALUES (?,?,?,?,?,?,?,?)")
-                   ->execute([$anneeId ?: null, $date,
-                       $libelle . ' – ' . ($etuRow['prenom'] ?? '') . ' ' . ($etuRow['nom'] ?? ''),
-                       'scolarite', $verse, $mode, $numRecu, $user['id']]);
+                if ($ecoleId > 0) {
+                    $db->prepare("INSERT INTO recettes (annee_id, date_recette, libelle, categorie, montant, mode_paiement, reference, created_by, ecole_id) VALUES (?,?,?,?,?,?,?,?,?)")
+                       ->execute([$anneeId ?: null, $date,
+                           $libelle . ' – ' . ($etuRow['prenom'] ?? '') . ' ' . ($etuRow['nom'] ?? ''),
+                           'scolarite', $verse, $mode, $numRecu, $user['id'], $ecoleId]);
+                } else {
+                    $db->prepare("INSERT INTO recettes (annee_id, date_recette, libelle, categorie, montant, mode_paiement, reference, created_by) VALUES (?,?,?,?,?,?,?,?)")
+                       ->execute([$anneeId ?: null, $date,
+                           $libelle . ' – ' . ($etuRow['prenom'] ?? '') . ' ' . ($etuRow['nom'] ?? ''),
+                           'scolarite', $verse, $mode, $numRecu, $user['id']]);
+                }
             }
 
             redirect('/modules/comptabilite/recu.php?print=' . $payId . '&auto_print=1');

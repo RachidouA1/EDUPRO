@@ -3,8 +3,9 @@ require_once __DIR__ . '/../../config/config.php';
 requireLogin();
 requireRole(['admin', 'directeur', 'coordinateur', 'scolarite']);
 
-$db   = getDB();
-$user = getCurrentUser();
+$db      = getDB();
+$user    = getCurrentUser();
+$ecoleId = getEcoleId();
 
 // Inline migrations
 try { $db->exec("
@@ -53,6 +54,10 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && verifyCsrfToken($_
 // Query
 $where  = ['1=1'];
 $params = [];
+if ($ecoleId > 0) {
+    $where[] = 'f.ecole_id = ?';
+    $params[] = $ecoleId;
+}
 if (hasRole('coordinateur')) {
     $where[] = 'e.filiere_id = ?';
     $params[] = getCoordinateurFiliereId();

@@ -14,20 +14,31 @@ try { $db->exec("ALTER TABLE filieres ADD COLUMN niveau_superieur TINYINT(1) NOT
 try { $db->exec("UPDATE filieres SET niveau_superieur=1 WHERE tronc_commun=1 OR tronc_commun_id IS NOT NULL"); } catch (PDOException $e) {}
 try { $db->exec("CREATE TABLE IF NOT EXISTS ue (
     id INT PRIMARY KEY AUTO_INCREMENT,
+    ecole_id INT NOT NULL,
     filiere_id INT NOT NULL,
     semestre_id INT NULL,
     semestre_num TINYINT NULL,
     code_ue VARCHAR(20) NOT NULL,
     nom VARCHAR(150) NOT NULL,
+    coefficient DECIMAL(4,2) NOT NULL DEFAULT 1,
+    credit INT NOT NULL DEFAULT 3,
     actif TINYINT(1) NOT NULL DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uk_ue_code (filiere_id, code_ue),
+    UNIQUE KEY uk_ue_code (ecole_id, filiere_id, code_ue),
+    INDEX idx_ecole_id (ecole_id),
     FOREIGN KEY (filiere_id) REFERENCES filieres(id) ON DELETE CASCADE
 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"); } catch (PDOException $e) {}
 // Colonnes ajoutées après-coup si table existait déjà
+try { $db->exec("ALTER TABLE ue ADD COLUMN ecole_id INT NOT NULL DEFAULT 0"); } catch (PDOException $e) {}
 try { $db->exec("ALTER TABLE ue ADD COLUMN semestre_id INT NULL"); } catch (PDOException $e) {}
 try { $db->exec("ALTER TABLE ue ADD COLUMN semestre_num TINYINT NULL"); } catch (PDOException $e) {}
 try { $db->exec("ALTER TABLE ue ADD COLUMN actif TINYINT(1) NOT NULL DEFAULT 1"); } catch (PDOException $e) {}
+try { $db->exec("ALTER TABLE ue ADD COLUMN coefficient DECIMAL(4,2) NOT NULL DEFAULT 1"); } catch (PDOException $e) {}
+try { $db->exec("ALTER TABLE ue ADD COLUMN credit INT NOT NULL DEFAULT 3"); } catch (PDOException $e) {}
+// Mettre à jour ecole_id pour les UE existantes sans école
+if ($ecoleId > 0) {
+    try { $db->prepare("UPDATE ue SET ecole_id=? WHERE ecole_id=0")->execute([$ecoleId]); } catch (PDOException $e) {}
+}
 
 $action = sanitize($_GET['action'] ?? 'list');
 $id     = (int)($_GET['id'] ?? 0);
@@ -42,8 +53,8 @@ if ($action === 'delete' && $id && verifyCsrfToken($_GET['csrf'] ?? '')) {
         $canDel = $chkRow && (int)$chkRow['filiere_id'] === getCoordinateurFiliereId();
     }
     if ($canDel) {
-        $db->prepare("UPDATE matieres SET actif=0 WHERE id=?")->execute([$id]);
-        setFlash('success', 'Matière désactivée.');
+        $db->prepare("DELETE FROM matieres WHERE id=?")->execute([$id]);
+        setFlash('success', 'Matière supprimée.');
     }
     redirect('/modules/pedagogique/matieres.php');
 }
@@ -103,11 +114,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (hasRole('admin') || hasRole('coord
                 setFlash('success', 'Matière modifiée.');
             } else {
                 try {
-                    $db->prepare("INSERT INTO matieres (code, nom, filiere_id, niveau_id, semestre_id, semestre_num, coefficient, volume_horaire, enseignant_id, ue_id, seuil_reussite, formule_calcul) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")
-                       ->execute([$data['code'], $data['nom'], $data['filiere_id'] ?: null, $data['niveau_id'] ?: null, $data['semestre_id'], $data['semestre_num'], $data['coefficient'], $data['volume_horaire'], $data['enseignant_id'] ?: null, $data['ue_id'], $data['seuil_reussite'], $data['formule_calcul']]);
+                    $db->prepare("INSERT INTO matieres (ecole_id, code, nom, filiere_id, niveau_id, semestre_id, semestre_num, coefficient, volume_horaire, enseignant_id, ue_id, seuil_reussite, formule_calcul) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)")
+                       ->execute([$ecoleId, $data['code'], $data['nom'], $data['filiere_id'] ?: null, $data['niveau_id'] ?: null, $data['semestre_id'], $data['semestre_num'], $data['coefficient'], $data['volume_horaire'], $data['enseignant_id'] ?: null, $data['ue_id'], $data['seuil_reussite'], $data['formule_calcul']]);
                     setFlash('success', 'Matière ajoutée.');
                 } catch (PDOException $e) {
-                    $errors[] = 'Ce code existe déjà.';
+                    $errors[] = $e->getCode() === '23000' ? 'Ce code existe déjà pour cette filière.' : 'Erreur : ' . $e->getMessage();
                 }
             }
             if (empty($errors)) redirect('/modules/pedagogique/matieres.php');
@@ -136,12 +147,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ue_action']) && hasRo
                        ->execute([$ueCode, $ueNom, $ueFil, $ueSemId, $ueSemNum, $ueEdit]);
                     setFlash('success', 'UE modifiée.');
                 } else {
-                    $db->prepare("INSERT INTO ue (code_ue,nom,filiere_id,semestre_id,semestre_num) VALUES (?,?,?,?,?)")
-                       ->execute([$ueCode, $ueNom, $ueFil, $ueSemId, $ueSemNum]);
+                    $db->prepare("INSERT INTO ue (ecole_id,code_ue,nom,filiere_id,semestre_id,semestre_num) VALUES (?,?,?,?,?,?)")
+                       ->execute([$ecoleId, $ueCode, $ueNom, $ueFil, $ueSemId, $ueSemNum]);
                     setFlash('success', 'UE créée.');
                 }
             } catch (PDOException $e) {
-                setFlash('error', 'Ce code UE existe déjà pour cette filière.');
+                setFlash('error', $e->getCode() === '23000' ? 'Ce code UE existe déjà pour cette filière.' : 'Erreur : ' . $e->getMessage());
             }
         }
         redirect('/modules/pedagogique/matieres.php');
@@ -150,7 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ue_action']) && hasRo
 
 // ── UE : delete ───────────────────────────────────────────────────────────────
 if ($action === 'delete_ue' && isset($_GET['ue_id']) && verifyCsrfToken($_GET['csrf'] ?? '')) {
-    $db->prepare("UPDATE ue SET actif=0 WHERE id=?")->execute([(int)$_GET['ue_id']]);
+    $db->prepare("DELETE FROM ue WHERE id=?")->execute([(int)$_GET['ue_id']]);
     setFlash('success', 'UE supprimée.');
     redirect('/modules/pedagogique/matieres.php');
 }
