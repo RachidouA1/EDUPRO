@@ -1,5 +1,5 @@
 # Secrets et configuration locale — ne jamais committer
-.claude/settings.local.json
+.claude/
 .env
 
 # Dépendances
