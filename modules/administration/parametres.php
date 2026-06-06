@@ -3,34 +3,34 @@ require_once __DIR__ . '/../../config/config.php';
 requireLogin();
 requireRole('admin');
 
-$db = getDB();
-
-// Migration inline
-try {
-    $db->exec("CREATE TABLE IF NOT EXISTS parametres (
-        id INT PRIMARY KEY AUTO_INCREMENT,
-        cle VARCHAR(100) UNIQUE NOT NULL,
-        valeur TEXT,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    )");
-    $defaults = [
-        ['etablissement_nom',       'École Privée de Santé Ibn Rochd'],
-        ['etablissement_slogan',    'Excellence – Santé – Service'],
-        ['etablissement_adresse',   'Tahoua, Niger'],
-        ['etablissement_ville',     'Tahoua'],
-        ['etablissement_pays',      'Niger'],
-        ['etablissement_telephone', ''],
-        ['etablissement_email',     ''],
-        ['theme_couleur_primaire',  '#1a73e8'],
-        ['theme_couleur_sidebar',   '#0f2d5c'],
-        ['logo_path',               ''],
-        ['cachet_dg_path',          ''],
-    ];
-    $ins = $db->prepare("INSERT IGNORE INTO parametres (cle, valeur) VALUES (?,?)");
-    foreach ($defaults as $d) $ins->execute($d);
-} catch (PDOException $e) {}
-
+$db      = getDB();
+$ecoleId = getEcoleId();
 $errors  = [];
+
+// Bloquer l'accès si aucun contexte école (superadmin doit d'abord sélectionner une école)
+if ($ecoleId === 0) {
+    setFlash('error', 'Sélectionnez une école avant d\'accéder aux paramètres.');
+    redirect('/modules/superadmin/index.php');
+}
+
+// Insérer les valeurs par défaut si elles n'existent pas encore pour cette école
+try {
+    $defaults = [
+        'etablissement_nom'       => 'Mon École',
+        'etablissement_slogan'    => '',
+        'etablissement_adresse'   => '',
+        'etablissement_ville'     => '',
+        'etablissement_pays'      => 'Niger',
+        'etablissement_telephone' => '',
+        'etablissement_email'     => '',
+        'theme_couleur_primaire'  => '#1a73e8',
+        'theme_couleur_sidebar'   => '#0f2d5c',
+        'logo_path'               => '',
+        'cachet_dg_path'          => '',
+    ];
+    $ins = $db->prepare("INSERT IGNORE INTO parametres (ecole_id, cle, valeur) VALUES (?,?,?)");
+    foreach ($defaults as $cle => $valeur) $ins->execute([$ecoleId, $cle, $valeur]);
+} catch (PDOException $e) {}
 
 // ─── Suppression du logo ──────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_logo'])) {
