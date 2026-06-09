@@ -64,13 +64,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (hasRole('admin') || hasRole('coord
     if (!verifyCsrfToken($_POST['csrf'] ?? '')) {
         $errors[] = 'Jeton invalide.';
     } else {
-        $filId = (int)($_POST['filiere_id'] ?? 0);
-        // Détecter si la filière est niveau supérieur
+        $filId    = (int)($_POST['filiere_id'] ?? 0);
         $isFilSup = false;
+        $isNoSem  = false;  // filières sans semestre ni UE (ex: ASB, VP)
+        $filCode  = '';
         if ($filId) {
-            $supChk = $db->prepare("SELECT niveau_superieur FROM filieres WHERE id=?");
+            $supChk = $db->prepare("SELECT niveau_superieur, code FROM filieres WHERE id=?");
             $supChk->execute([$filId]);
-            $isFilSup = (bool)($supChk->fetchColumn());
+            $filRow   = $supChk->fetch();
+            $isFilSup = (bool)($filRow['niveau_superieur'] ?? false);
+            $filCode  = strtoupper($filRow['code'] ?? '');
+            $isNoSem  = in_array($filCode, ['ASB', 'VP']);
+            if ($isNoSem) $isFilSup = false; // ASB/VP ont niveau_superieur=1 mais n'ont pas de semestres
         }
 
         $data = [
@@ -78,8 +83,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (hasRole('admin') || hasRole('coord
             'nom'            => sanitize($_POST['nom']                   ?? ''),
             'filiere_id'     => $filId,
             'niveau_id'      => (int)($_POST['niveau_id']               ?? 0),
-            'semestre_id'    => $isFilSup ? null : ((int)($_POST['semestre_id']  ?? 0) ?: null),
-            'semestre_num'   => $isFilSup ? ((int)($_POST['semestre_num'] ?? 0) ?: null) : null,
+            'semestre_id'    => ($isFilSup || $isNoSem) ? null : ((int)($_POST['semestre_id']  ?? 0) ?: null),
+            'semestre_num'   => ($isFilSup && !$isNoSem) ? ((int)($_POST['semestre_num'] ?? 0) ?: null) : null,
             'coefficient'    => max(0.25, (float)($_POST['coefficient']  ?? 1)),
             'volume_horaire' => (int)($_POST['volume_horaire']          ?? 0),
             'enseignant_id'  => (int)($_POST['enseignant_id']           ?? 0),
@@ -91,6 +96,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (hasRole('admin') || hasRole('coord
 
         if (empty($data['code'])) $errors[] = 'Le code est obligatoire.';
         if (empty($data['nom']))  $errors[] = 'Le nom est obligatoire.';
+
+        // ── Vérifications de cohérence ────────────────────────────────────────
+        // 1) Filières sans semestre (ASB, VP) : aucune UE autorisée
+        if ($isNoSem && $data['ue_id']) {
+            $errors[] = 'La filière ' . $filCode . ' ne peut pas être associée à une UE. Décochez l\'UE avant d\'enregistrer.';
+            $data['ue_id'] = null;
+        }
+
+        // 2) Filières sans semestre : pas de semestre numéroté (double sécurité)
+        if ($isNoSem && (int)($_POST['semestre_num'] ?? 0)) {
+            $errors[] = 'La filière ' . $filCode . ' n\'utilise pas de semestres.';
+        }
+
+        // 3) L'UE sélectionnée doit appartenir à la même filière
+        if ($data['ue_id'] && $data['filiere_id']) {
+            $ueChk = $db->prepare("SELECT filiere_id FROM ue WHERE id=?");
+            $ueChk->execute([$data['ue_id']]);
+            $ueRow = $ueChk->fetch();
+            if (!$ueRow) {
+                $errors[] = 'L\'UE sélectionnée est introuvable.';
+                $data['ue_id'] = null;
+            } elseif ((int)$ueRow['filiere_id'] !== (int)$data['filiere_id']) {
+                $errors[] = 'L\'UE sélectionnée n\'appartient pas à la filière choisie. Vérifiez la correspondance filière / UE.';
+                $data['ue_id'] = null;
+            }
+        }
+
+        // 4) semestre_num fourni pour une filière non-supérieure
+        if (!$isFilSup && !$isNoSem && (int)($_POST['semestre_num'] ?? 0)) {
+            $errors[] = 'Le semestre numéroté (S1, S2…) est réservé aux filières de niveau supérieur.';
+        }
+
+        // 5) niveau_id doit appartenir à la filière sélectionnée
+        if ($data['niveau_id'] && $data['filiere_id']) {
+            $nChk = $db->prepare("SELECT filiere_id FROM niveaux WHERE id=?");
+            $nChk->execute([$data['niveau_id']]);
+            $nRow = $nChk->fetch();
+            if ($nRow && (int)$nRow['filiere_id'] !== (int)$data['filiere_id']) {
+                $errors[] = 'Le niveau sélectionné n\'appartient pas à la filière choisie.';
+                $data['niveau_id'] = 0;
+            }
+        }
 
         // Coordinateur can only manage their own filière
         if (hasRole('coordinateur')) {
@@ -174,6 +221,23 @@ if ($action === 'edit' && $id) {
     $editMatiere->execute([$id]);
     $editMatiere = $editMatiere->fetch();
 }
+
+// Données à réinjecter dans la modal si le formulaire a des erreurs
+$reopenModal = !empty($errors) && isset($_POST['csrf']) && !isset($_POST['ue_action']);
+$formData    = $reopenModal ? [
+    'edit_id'        => (int)($_POST['edit_id']        ?? 0),
+    'code'           => strtoupper(sanitize($_POST['code'] ?? '')),
+    'nom'            => sanitize($_POST['nom']          ?? ''),
+    'filiere_id'     => (int)($_POST['filiere_id']      ?? 0),
+    'niveau_id'      => (int)($_POST['niveau_id']       ?? 0),
+    'semestre_id'    => (int)($_POST['semestre_id']     ?? 0),
+    'semestre_num'   => (int)($_POST['semestre_num']    ?? 0),
+    'coefficient'    => (float)($_POST['coefficient']   ?? 1),
+    'volume_horaire' => (int)($_POST['volume_horaire']  ?? 0),
+    'seuil_reussite' => (int)($_POST['seuil_reussite']  ?? 12),
+    'formule_calcul' => $_POST['formule_calcul']        ?? 'exam_seul',
+    'ue_id'          => (int)($_POST['ue_id']           ?? 0),
+] : null;
 
 // List — coordinateur is locked to their own filière
 $fFilter = (int)($_GET['filiere_id'] ?? 0);
@@ -324,8 +388,18 @@ include APP_ROOT . '/includes/header.php';
                 $canEditMat = hasRole('admin') || (hasRole('coordinateur') && (int)($m['filiere_id'] ?? 0) === getCoordinateurFiliereId());
               ?>
               <?php if ($canEditMat): ?>
-              <button class="btn btn-icon btn-sm btn-outline-warning" onclick='editMatiere(<?= json_encode($m) ?>)' title="Modifier" data-bs-toggle="tooltip"><i class="fas fa-edit"></i></button>
-              <a href="?action=delete&id=<?= $m['id'] ?>&csrf=<?= h(generateCsrfToken()) ?>" class="btn btn-icon btn-sm btn-outline-danger" onclick="return confirm('Supprimer cette matière ?')" title="Supprimer" data-bs-toggle="tooltip"><i class="fas fa-trash"></i></a>
+              <button type="button"
+                      class="btn btn-sm btn-outline-warning btn-edit-matiere"
+                      data-matiere="<?= htmlspecialchars(json_encode($m, JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>"
+                      title="Modifier">
+                <i class="fas fa-edit"></i>
+              </button>
+              <a href="?action=delete&id=<?= $m['id'] ?>&csrf=<?= h(generateCsrfToken()) ?>"
+                 class="btn btn-sm btn-outline-danger"
+                 onclick="return confirm('Supprimer cette matière ?')"
+                 title="Supprimer">
+                <i class="fas fa-trash"></i>
+              </a>
               <?php endif; ?>
             </div>
           </td>
@@ -371,8 +445,17 @@ include APP_ROOT . '/includes/header.php';
           <?php if (hasRole(['admin','coordinateur'])): ?>
           <td>
             <div class="d-flex gap-1">
-              <button class="btn btn-icon btn-sm btn-outline-warning" onclick='editUe(<?= json_encode($ue) ?>)' title="Modifier"><i class="fas fa-edit"></i></button>
-              <a href="?action=delete_ue&ue_id=<?= $ue['id'] ?>&csrf=<?= h(generateCsrfToken()) ?>" class="btn btn-icon btn-sm btn-outline-danger" onclick="return confirm('Supprimer cette UE ?')"><i class="fas fa-trash"></i></a>
+              <button type="button"
+                      class="btn btn-sm btn-outline-warning btn-edit-ue"
+                      data-ue="<?= htmlspecialchars(json_encode($ue, JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>"
+                      title="Modifier">
+                <i class="fas fa-edit"></i>
+              </button>
+              <a href="?action=delete_ue&ue_id=<?= $ue['id'] ?>&csrf=<?= h(generateCsrfToken()) ?>"
+                 class="btn btn-sm btn-outline-danger"
+                 onclick="return confirm('Supprimer cette UE ?')">
+                <i class="fas fa-trash"></i>
+              </a>
             </div>
           </td>
           <?php endif; ?>
@@ -691,19 +774,18 @@ function setFormMode(mode) {
 
 function editMatiere(m) {
   document.getElementById('matiereModalTitle').textContent = 'Modifier la matière';
-  document.getElementById('edit_id').value = m.id;
-  document.getElementById('f_code').value = m.code || '';
-  document.getElementById('f_nom').value = m.nom || '';
-  document.getElementById('f_filiere_id').value = m.filiere_id || '';
-  document.getElementById('f_coefficient').value = m.coefficient || '1';
-  document.getElementById('f_volume_horaire').value = m.volume_horaire || '0';
+  document.getElementById('edit_id').value            = m.id;
+  document.getElementById('f_code').value             = m.code            || '';
+  document.getElementById('f_nom').value              = m.nom             || '';
+  document.getElementById('f_filiere_id').value       = m.filiere_id      || '';
+  document.getElementById('f_coefficient').value      = m.coefficient     || '1';
+  document.getElementById('f_volume_horaire').value   = m.volume_horaire  || '0';
   filterNiveaux(m.niveau_id || null);
   updateSemestreRow();
-  // Semestre selon type de filière
   if (isSelectedFiliereSup()) {
     document.getElementById('f_semestre_num').value = m.semestre_num || '';
   } else {
-    document.getElementById('f_semestre_id').value = m.semestre_id || '';
+    document.getElementById('f_semestre_id').value  = m.semestre_id  || '';
   }
   const fc = document.getElementById('f_formule_calcul');
   if (fc) fc.value = m.formule_calcul || 'exam_seul';
@@ -711,27 +793,73 @@ function editMatiere(m) {
   if (sr) sr.value = m.seuil_reussite ?? '12';
   const ue = document.getElementById('f_ue_id');
   if (ue) ue.value = m.ue_id || '';
-  new bootstrap.Modal(document.getElementById('matiereModal')).show();
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('matiereModal')).show();
 }
 
 function resetUeForm() {
   document.getElementById('ueModalTitle').textContent = 'Nouvelle Unité d\'Enseignement';
   ['ue_edit_id','ue_code','ue_nom'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   ['ue_filiere_id','ue_semestre_num'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  const c = document.getElementById('ue_coefficient'); if (c) c.value = '1';
-  const cr = document.getElementById('ue_credit');     if (cr) cr.value = '3';
+  const c  = document.getElementById('ue_coefficient'); if (c)  c.value  = '1';
+  const cr = document.getElementById('ue_credit');      if (cr) cr.value = '3';
 }
+
 function editUe(u) {
-  document.getElementById('ueModalTitle').textContent = 'Modifier l\'UE';
-  document.getElementById('ue_edit_id').value      = u.id;
-  document.getElementById('ue_code').value         = u.code_ue;
-  document.getElementById('ue_nom').value          = u.nom;
-  document.getElementById('ue_filiere_id').value   = u.filiere_id;
-  document.getElementById('ue_semestre_num').value = u.semestre_num || '';
-  document.getElementById('ue_coefficient').value  = u.coefficient  || '1';
-  document.getElementById('ue_credit').value       = u.credit       || '3';
-  new bootstrap.Modal(document.getElementById('ueModal')).show();
+  document.getElementById('ueModalTitle').textContent   = 'Modifier l\'UE';
+  document.getElementById('ue_edit_id').value           = u.id;
+  document.getElementById('ue_code').value              = u.code_ue;
+  document.getElementById('ue_nom').value               = u.nom;
+  document.getElementById('ue_filiere_id').value        = u.filiere_id;
+  document.getElementById('ue_semestre_num').value      = u.semestre_num  || '';
+  document.getElementById('ue_coefficient').value       = u.coefficient   || '1';
+  document.getElementById('ue_credit').value            = u.credit        || '3';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('ueModal')).show();
 }
+
+// ── Délégation d'événements (évite les conflits avec tooltip/DOM) ─────────────
+document.addEventListener('click', function(e) {
+  const btnMat = e.target.closest('.btn-edit-matiere');
+  if (btnMat) {
+    e.preventDefault();
+    try { editMatiere(JSON.parse(btnMat.getAttribute('data-matiere'))); }
+    catch(err) { console.error('editMatiere parse error', err); }
+    return;
+  }
+  const btnUe = e.target.closest('.btn-edit-ue');
+  if (btnUe) {
+    e.preventDefault();
+    try { editUe(JSON.parse(btnUe.getAttribute('data-ue'))); }
+    catch(err) { console.error('editUe parse error', err); }
+  }
+});
+
+<?php if ($reopenModal && $formData): ?>
+// ── Réouverture automatique de la modal après erreur de validation ────────────
+document.addEventListener('DOMContentLoaded', function() {
+  const fd = <?= json_encode($formData, JSON_UNESCAPED_UNICODE) ?>;
+  document.getElementById('matiereModalTitle').textContent = fd.edit_id ? 'Modifier la matière' : 'Nouvelle matière';
+  document.getElementById('edit_id').value          = fd.edit_id       || '';
+  document.getElementById('f_code').value           = fd.code          || '';
+  document.getElementById('f_nom').value            = fd.nom           || '';
+  document.getElementById('f_filiere_id').value     = fd.filiere_id    || '';
+  document.getElementById('f_coefficient').value    = fd.coefficient   || '1';
+  document.getElementById('f_volume_horaire').value = fd.volume_horaire|| '0';
+  filterNiveaux(fd.niveau_id || null);
+  updateSemestreRow();
+  if (isSelectedFiliereSup()) {
+    document.getElementById('f_semestre_num').value = fd.semestre_num || '';
+  } else {
+    document.getElementById('f_semestre_id').value  = fd.semestre_id  || '';
+  }
+  const fc = document.getElementById('f_formule_calcul');
+  if (fc) fc.value = fd.formule_calcul || 'exam_seul';
+  const sr = document.getElementById('f_seuil_reussite');
+  if (sr) sr.value = fd.seuil_reussite !== undefined ? fd.seuil_reussite : 12;
+  const ue = document.getElementById('f_ue_id');
+  if (ue) ue.value = fd.ue_id || '';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('matiereModal')).show();
+});
+<?php endif; ?>
 </script>
 
 <?php include APP_ROOT . '/includes/footer.php'; ?>

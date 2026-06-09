@@ -128,9 +128,16 @@ HTML;
     <?php if ($role === 'superadmin'): ?>
 
     <?= sidebarGroup('sa-ecoles', 'Établissements', 'fa-school',
-        ['/superadmin/'],
+        ['/superadmin/index', '/superadmin/ecole_form'],
         '<a href="' . APP_URL . '/modules/superadmin/index.php" class="nav-link' . isActive('/superadmin/index') . '"><i class="fas fa-list"></i> Toutes les écoles</a>'
       . '<a href="' . APP_URL . '/modules/superadmin/ecole_form.php" class="nav-link' . isActive('/superadmin/ecole_form') . '"><i class="fas fa-plus"></i> Nouvelle école</a>'
+    ) ?>
+
+    <?= sidebarGroup('sa-admins', 'Administration', 'fa-users-cog',
+        ['/superadmin/licences', '/superadmin/superadmins', '/superadmin/profil'],
+        '<a href="' . APP_URL . '/modules/superadmin/licences.php" class="nav-link' . isActive('/superadmin/licences') . '"><i class="fas fa-key"></i> Licences</a>'
+      . '<a href="' . APP_URL . '/modules/superadmin/superadmins.php" class="nav-link' . isActive('/superadmin/superadmins') . '"><i class="fas fa-crown"></i> Super Administrateurs</a>'
+      . '<a href="' . APP_URL . '/modules/superadmin/profil.php" class="nav-link' . isActive('/superadmin/profil') . '"><i class="fas fa-user-circle"></i> Mon profil</a>'
     ) ?>
 
     <?php if (getEcoleId()): // SuperAdmin with school context — show school menus ?>

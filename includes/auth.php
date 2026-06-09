@@ -36,6 +36,18 @@ function requireLogin(): void {
         header('Location: ' . APP_URL . '/index.php');
         exit;
     }
+    // Block school users if their licence is suspended or revoked
+    if (!isSuperAdmin()) {
+        $ecId = getEcoleId();
+        if ($ecId > 0) {
+            $lic = getLicenceEcole($ecId);
+            if ($lic && in_array($lic['statut'], ['suspendue', 'revoquee'])) {
+                doLogout();
+                header('Location: ' . APP_URL . '/index.php?err=licence');
+                exit;
+            }
+        }
+    }
 }
 
 function requireRole($role): void {

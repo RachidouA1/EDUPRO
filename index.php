@@ -7,6 +7,11 @@ if (isLoggedIn()) {
 
 $error = '';
 
+// Licence block redirect
+if (($_GET['err'] ?? '') === 'licence') {
+    $error = 'La licence d\'exploitation de votre établissement a été suspendue ou révoquée. Contactez votre Super Administrateur.';
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $identifiant = sanitize($_POST['identifiant'] ?? '');
     $password    = $_POST['password'] ?? '';

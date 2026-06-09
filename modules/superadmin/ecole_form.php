@@ -72,12 +72,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $db->prepare("UPDATE ecoles SET code=?,nom=?,slogan=?,adresse=?,ville=?,pays=?,telephone=?,email=?,logo_path=?,theme_couleur_primaire=?,theme_couleur_sidebar=?,actif=? WHERE id=?")
                    ->execute([$code,$nom,$slogan,$adresse,$ville,$pays,$tel,$email,$logoPath,$primary,$sidebar,$actif,$id]);
                 setFlash('success', 'École mise à jour.');
+                redirect('/modules/superadmin/index.php');
             } else {
                 $db->prepare("INSERT INTO ecoles (code,nom,slogan,adresse,ville,pays,telephone,email,logo_path,theme_couleur_primaire,theme_couleur_sidebar,actif) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")
                    ->execute([$code,$nom,$slogan,$adresse,$ville,$pays,$tel,$email,$logoPath,$primary,$sidebar,$actif]);
-                setFlash('success', 'École créée avec succès.');
+                $newId = (int)$db->lastInsertId();
+                setFlash('success', 'École créée. Générez maintenant sa licence d\'exploitation.');
+                redirect('/modules/superadmin/licences.php?ecole_id=' . $newId);
             }
-            redirect('/modules/superadmin/index.php');
         }
     }
 }

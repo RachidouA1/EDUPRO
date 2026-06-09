@@ -93,6 +93,9 @@ $csrf = generateCsrfToken();
               </span>
             </li>
             <li><hr class="dropdown-divider"></li>
+            <?php if (isSuperAdmin()): ?>
+            <li><a class="dropdown-item" href="<?= APP_URL ?>/modules/superadmin/profil.php"><i class="fas fa-user-circle me-2"></i>Mon profil</a></li>
+            <?php endif; ?>
             <li><a class="dropdown-item text-danger" href="<?= APP_URL ?>/logout.php"><i class="fas fa-sign-out-alt me-2"></i>Déconnexion</a></li>
           </ul>
         </div>

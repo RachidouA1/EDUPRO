@@ -25,7 +25,24 @@ if (isset($_GET['delete']) && verifyCsrfToken($_GET['csrf'] ?? '')) {
     redirect('/modules/superadmin/index.php');
 }
 
-$ecoles = $db->query("SELECT e.*, (SELECT COUNT(*) FROM users u WHERE u.ecole_id = e.id) AS nb_users, (SELECT COUNT(*) FROM etudiants et WHERE et.ecole_id = e.id) AS nb_etudiants FROM ecoles e ORDER BY e.nom")->fetchAll();
+// Auto-expire licences
+try {
+    $db->exec("UPDATE licences SET statut = 'expiree' WHERE statut = 'active' AND date_expiration IS NOT NULL AND date_expiration < CURDATE()");
+} catch (PDOException $e) {}
+
+$ecoles = $db->query("
+    SELECT e.*,
+           (SELECT COUNT(*) FROM users u WHERE u.ecole_id = e.id) AS nb_users,
+           (SELECT COUNT(*) FROM etudiants et WHERE et.ecole_id = e.id) AS nb_etudiants,
+           l.statut         AS lic_statut,
+           l.date_expiration AS lic_expiration,
+           l.id             AS lic_id
+    FROM ecoles e
+    LEFT JOIN licences l ON l.id = (
+        SELECT id FROM licences WHERE ecole_id = e.id ORDER BY created_at DESC LIMIT 1
+    )
+    ORDER BY e.nom
+")->fetchAll();
 
 $pageTitle  = 'Gestion des écoles';
 $breadcrumb = ['SuperAdmin' => null, 'Écoles' => null];
@@ -92,6 +109,7 @@ include APP_ROOT . '/includes/header.php';
           <th>Utilisateurs</th>
           <th>Étudiants</th>
           <th>Statut</th>
+          <th>Licence</th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -129,11 +147,30 @@ include APP_ROOT . '/includes/header.php';
             <?php endif; ?>
           </td>
           <td>
+            <?php
+              $licData = $e['lic_id'] ? ['statut' => $e['lic_statut']] : null;
+              echo getLicenceBadge($licData);
+              if ($e['lic_expiration'] && ($e['lic_statut'] ?? '') === 'active') {
+                  $diff = (int)(new DateTime($e['lic_expiration']))->diff(new DateTime())->days;
+                  $past = $e['lic_expiration'] < date('Y-m-d');
+                  if (!$past && $diff <= 30) {
+                      echo '<br><small class="text-warning"><i class="fas fa-exclamation-triangle me-1"></i>' . $diff . 'j</small>';
+                  }
+              }
+            ?>
+          </td>
+          <td>
             <div class="d-flex gap-1">
               <!-- Entrer dans cette école -->
               <a href="<?= APP_URL ?>/modules/superadmin/switch_ecole.php?id=<?= $e['id'] ?>&csrf=<?= h(generateCsrfToken()) ?>"
                  class="btn btn-sm btn-primary" title="Gérer cette école">
                 <i class="fas fa-sign-in-alt"></i>
+              </a>
+              <!-- Licences -->
+              <a href="<?= APP_URL ?>/modules/superadmin/licences.php?ecole_id=<?= $e['id'] ?>"
+                 class="btn btn-sm btn-outline-<?= $e['lic_id'] && $e['lic_statut'] === 'active' ? 'success' : 'danger' ?>"
+                 title="<?= $e['lic_id'] ? 'Gérer la licence' : 'Générer une licence' ?>">
+                <i class="fas fa-key"></i>
               </a>
               <!-- Éditer -->
               <a href="<?= APP_URL ?>/modules/superadmin/ecole_form.php?id=<?= $e['id'] ?>"

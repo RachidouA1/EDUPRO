@@ -385,3 +385,45 @@ function getLogoUrl(): string {
     }
     return '';
 }
+
+// ── Licences ──────────────────────────────────────────────────────────────────
+
+function generateLicenceKey(string $ecoleCode): string {
+    $prefix = strtoupper(preg_replace('/[^A-Z0-9]/', '', $ecoleCode));
+    $prefix = str_pad(substr($prefix, 0, 4), 4, 'X');
+    return 'EDUPRO-' . $prefix
+         . '-' . strtoupper(bin2hex(random_bytes(2)))
+         . '-' . strtoupper(bin2hex(random_bytes(2)))
+         . '-' . strtoupper(bin2hex(random_bytes(2)));
+}
+
+/** Returns the most recent licence for a school (any status). */
+function getLicenceEcole(int $ecoleId): ?array {
+    if ($ecoleId <= 0) return null;
+    try {
+        $s = getDB()->prepare("SELECT * FROM licences WHERE ecole_id = ? ORDER BY created_at DESC LIMIT 1");
+        $s->execute([$ecoleId]);
+        return $s->fetch() ?: null;
+    } catch (PDOException $e) { return null; }
+}
+
+/** Returns the currently active licence for a school (statut = 'active' only). */
+function getLicenceActive(int $ecoleId): ?array {
+    if ($ecoleId <= 0) return null;
+    try {
+        $s = getDB()->prepare("SELECT * FROM licences WHERE ecole_id = ? AND statut = 'active' ORDER BY date_expiration DESC LIMIT 1");
+        $s->execute([$ecoleId]);
+        return $s->fetch() ?: null;
+    } catch (PDOException $e) { return null; }
+}
+
+function getLicenceBadge(?array $lic): string {
+    if (!$lic) return '<span class="badge bg-danger"><i class="fas fa-times-circle me-1"></i>Aucune licence</span>';
+    return match($lic['statut']) {
+        'active'    => '<span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Active</span>',
+        'expiree'   => '<span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>Expirée</span>',
+        'suspendue' => '<span class="badge bg-secondary"><i class="fas fa-pause-circle me-1"></i>Suspendue</span>',
+        'revoquee'  => '<span class="badge bg-danger"><i class="fas fa-ban me-1"></i>Révoquée</span>',
+        default     => '<span class="badge bg-secondary">' . h($lic['statut']) . '</span>',
+    };
+}
