@@ -4,9 +4,12 @@ services:
     container_name: edupro_app
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - .:/var/www/html/EDUPRO
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     environment:
+      ALLOW_INSTALL: "1"
       DB_HOST: db
       DB_NAME: ${DB_NAME:-edupro}
       DB_USER: ${DB_USER:-root}

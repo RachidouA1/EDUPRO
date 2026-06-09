@@ -50,7 +50,7 @@ if ($action === 'delete' && $id && verifyCsrfToken($_GET['csrf'] ?? '')) {
         $chk = $db->prepare("SELECT filiere_id FROM matieres WHERE id=?");
         $chk->execute([$id]);
         $chkRow = $chk->fetch();
-        $canDel = $chkRow && coordinateurCanAccess((int)$chkRow['filiere_id']);
+        $canDel = $chkRow && (int)$chkRow['filiere_id'] === getCoordinateurFiliereId();
     }
     if ($canDel) {
         $db->prepare("DELETE FROM matieres WHERE id=?")->execute([$id]);
@@ -139,20 +139,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (hasRole('admin') || hasRole('coord
             }
         }
 
-        // Coordinateur : verifie acces a la filiere selectionnee
+        // Coordinateur can only manage their own filière
         if (hasRole('coordinateur')) {
-            $selFId = (int)($data['filiere_id'] ?? 0);
-            if (!$selFId) {
-                $errors[] = 'Veuillez selectionner une filiere.';
-            } elseif (!coordinateurCanAccess($selFId)) {
-                $errors[] = "Vous n'avez pas acces a cette filiere.";
-            }
+            $coordFId = getCoordinateurFiliereId();
+            $data['filiere_id'] = $coordFId;
+            if (!$coordFId) $errors[] = 'Filière non définie pour ce coordinateur.';
             $editId2 = (int)($_POST['edit_id'] ?? 0);
             if ($editId2 && empty($errors)) {
                 $chk2 = $db->prepare("SELECT filiere_id FROM matieres WHERE id=?");
                 $chk2->execute([$editId2]);
                 $r2 = $chk2->fetch();
-                if ($r2 && !coordinateurCanAccess((int)$r2['filiere_id'])) $errors[] = "Acces refuse.";
+                if ($r2 && (int)$r2['filiere_id'] !== $coordFId) $errors[] = 'Accès refusé.';
             }
         }
 
@@ -245,15 +242,13 @@ $formData    = $reopenModal ? [
 // List — coordinateur is locked to their own filière
 $fFilter = (int)($_GET['filiere_id'] ?? 0);
 $nFilter = (int)($_GET['niveau_id']  ?? 0);
-$search  = trim($_GET['q'] ?? '');
 if (hasRole('coordinateur')) {
-    $fFilter = 0; // Coordinateur voit toutes ses filieres
+    $fFilter = getCoordinateurFiliereId();
 }
 $where   = ['m.actif=1'];
 $params  = [];
 if ($fFilter)     { $where[] = 'm.filiere_id=?';  $params[] = $fFilter; }
 if ($nFilter)     { $where[] = 'm.niveau_id=?';   $params[] = $nFilter; }
-if ($search !== '') { $where[] = '(m.code LIKE ? OR m.nom LIKE ?)'; $params[] = '%'.$search.'%'; $params[] = '%'.$search.'%'; }
 if ($ecoleId > 0) { $where[] = 'f.ecole_id=?';    $params[] = $ecoleId; }
 $stmt = $db->prepare("
     SELECT m.*, f.nom as filiere_nom, f.code as filiere_code, n.nom as niveau_nom,
@@ -272,10 +267,6 @@ $stmt->execute($params);
 $matieres = $stmt->fetchAll();
 
 $filieres    = getFilieres();
-if (hasRole('coordinateur')) {
-    $coordFIds = getCoordinateurFiliereIds();
-    $filieres  = array_values(array_filter($filieres, fn($f) => in_array((int)$f['id'], $coordFIds)));
-}
 $niveaux     = getNiveaux();
 $semestres   = getSemestres();
 if ($ecoleId > 0) {
@@ -330,7 +321,7 @@ include APP_ROOT . '/includes/header.php';
 <div class="card mb-4">
   <div class="card-body py-3">
     <form method="GET" class="row g-2 align-items-end">
-      <div class="col-md-3">
+      <div class="col-md-4">
         <select name="filiere_id" class="form-select" onchange="this.form.submit()">
           <option value="">Toutes filières</option>
           <?php foreach ($filieres as $f): ?>
@@ -338,19 +329,13 @@ include APP_ROOT . '/includes/header.php';
           <?php endforeach; ?>
         </select>
       </div>
-      <div class="col-md-3">
+      <div class="col-md-4">
         <select name="niveau_id" class="form-select" onchange="this.form.submit()">
           <option value="">Tous niveaux</option>
           <?php foreach ($niveaux as $n): ?>
             <option value="<?= $n['id'] ?>" <?= $nFilter == $n['id'] ? 'selected' : '' ?>><?= h($n['filiere_nom']) ?> – <?= h($n['nom']) ?></option>
           <?php endforeach; ?>
         </select>
-      </div>
-      <div class="col-md-4">
-        <div class="input-group">
-          <input type="text" name="q" class="form-control" placeholder="Rechercher code ou nom…" value="<?= h($search) ?>">
-          <button type="submit" class="btn btn-outline-secondary"><i class="fas fa-search"></i></button>
-        </div>
       </div>
       <div class="col-md-2">
         <a href="?" class="btn btn-light w-100"><i class="fas fa-times me-1"></i>Effacer</a>
@@ -400,7 +385,7 @@ include APP_ROOT . '/includes/header.php';
           <td>
             <div class="d-flex gap-1">
               <?php
-                $canEditMat = hasRole('admin') || (hasRole('coordinateur') && coordinateurCanAccess((int)($m['filiere_id'] ?? 0)));
+                $canEditMat = hasRole('admin') || (hasRole('coordinateur') && (int)($m['filiere_id'] ?? 0) === getCoordinateurFiliereId());
               ?>
               <?php if ($canEditMat): ?>
               <button type="button"
