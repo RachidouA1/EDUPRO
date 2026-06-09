@@ -209,8 +209,11 @@ $logoPath     = $ecole['logo_path'] ?? '';
       <i class="fas fa-chart-bar me-1"></i>Rapport
     </a>
     <?php if ($canWrite): ?>
+    <a href="<?= APP_URL ?>/modules/etudiants/feuille_appel.php" class="btn btn-outline-primary">
+      <i class="fas fa-clipboard-list me-2"></i>Feuille d'appel
+    </a>
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addAbsModal">
-      <i class="fas fa-plus me-2"></i>Nouvelle absence
+      <i class="fas fa-plus me-2"></i>Absence individuelle
     </button>
     <?php endif; ?>
   </div>

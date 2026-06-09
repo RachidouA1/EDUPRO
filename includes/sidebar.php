@@ -174,6 +174,7 @@ HTML;
         '<a href="' . APP_URL . '/modules/etudiants/index.php" class="nav-link' . isActive('/etudiants/index','/etudiants/view','/etudiants/edit','/etudiants/paiements','/etudiants/delete') . '"><i class="fas fa-user-graduate"></i> Liste des étudiants</a>'
       . '<a href="' . APP_URL . '/modules/etudiants/add.php" class="nav-link' . isActive('/etudiants/add') . '"><i class="fas fa-user-plus"></i> Nouvel étudiant</a>'
       . '<a href="' . APP_URL . '/modules/etudiants/absences.php" class="nav-link' . isActive('/etudiants/absences','/etudiants/rapport_absences') . '"><i class="fas fa-calendar-times"></i> Absences</a>'
+      . '<a href="' . APP_URL . '/modules/etudiants/feuille_appel.php" class="nav-link' . isActive('/etudiants/feuille_appel') . '"><i class="fas fa-clipboard-list"></i> Feuille d\'appel</a>'
       . '<a href="' . APP_URL . '/modules/etudiants/promotion.php" class="nav-link' . isActive('/etudiants/promotion') . '"><i class="fas fa-level-up-alt"></i> Passage en classe sup.</a>'
     ) ?>
 
@@ -244,6 +245,7 @@ HTML;
         '<a href="' . APP_URL . '/modules/etudiants/index.php" class="nav-link' . isActive('/etudiants/index','/etudiants/view','/etudiants/edit','/etudiants/delete') . '"><i class="fas fa-user-graduate"></i> Liste des étudiants</a>'
       . '<a href="' . APP_URL . '/modules/etudiants/add.php" class="nav-link' . isActive('/etudiants/add') . '"><i class="fas fa-user-plus"></i> Nouvel étudiant</a>'
       . '<a href="' . APP_URL . '/modules/etudiants/absences.php" class="nav-link' . isActive('/etudiants/absences','/etudiants/rapport_absences') . '"><i class="fas fa-calendar-times"></i> Absences</a>'
+      . '<a href="' . APP_URL . '/modules/etudiants/feuille_appel.php" class="nav-link' . isActive('/etudiants/feuille_appel') . '"><i class="fas fa-clipboard-list"></i> Feuille d\'appel</a>'
       . '<a href="' . APP_URL . '/modules/etudiants/promotion.php" class="nav-link' . isActive('/etudiants/promotion') . '"><i class="fas fa-level-up-alt"></i> Passage en classe sup.</a>'
     ) ?>
 
@@ -311,6 +313,7 @@ HTML;
         ['/etudiants/'],
         '<a href="' . APP_URL . '/modules/etudiants/index.php" class="nav-link' . isActive('/etudiants/index','/etudiants/view') . '"><i class="fas fa-user-graduate"></i> Mes Étudiants</a>'
       . '<a href="' . APP_URL . '/modules/etudiants/absences.php" class="nav-link' . isActive('/etudiants/absences','/etudiants/rapport_absences') . '"><i class="fas fa-calendar-times"></i> Absences</a>'
+      . '<a href="' . APP_URL . '/modules/etudiants/feuille_appel.php" class="nav-link' . isActive('/etudiants/feuille_appel') . '"><i class="fas fa-clipboard-list"></i> Feuille d\'appel</a>'
     ) ?>
 
     <?= sidebarGroup('coord-enseignants', 'Enseignants', 'fa-chalkboard-teacher',
