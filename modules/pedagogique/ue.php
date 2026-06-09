@@ -1,10 +1,11 @@
 <?php
 require_once __DIR__ . '/../../config/config.php';
 requireLogin();
-requireRole(['admin', 'directeur']);
+requireRole(['admin', 'directeur', 'coordinateur']);
 
 $db      = getDB();
 $ecoleId = getEcoleId();
+$isCoord = hasRole('coordinateur');
 $errors  = [];
 $action  = sanitize($_GET['action'] ?? 'list');
 $id      = (int)($_GET['id'] ?? 0);
@@ -13,8 +14,17 @@ $id      = (int)($_GET['id'] ?? 0);
 try { $db->exec("ALTER TABLE matieres ADD COLUMN ue_id INT NULL"); } catch (PDOException $e) {}
 try { $db->exec("ALTER TABLE matieres ADD COLUMN seuil_reussite INT NOT NULL DEFAULT 12"); } catch (PDOException $e) {}
 
-// Delete (soft)
-if ($action === 'delete' && $id && hasRole('admin') && verifyCsrfToken($_GET['csrf'] ?? '')) {
+// Delete — admin ou coordinateur (limité à sa filière)
+if ($action === 'delete' && $id && hasRole(['admin', 'coordinateur']) && verifyCsrfToken($_GET['csrf'] ?? '')) {
+    if ($isCoord) {
+        $coordFil = getCoordinateurFiliereId();
+        $owns = $db->prepare("SELECT COUNT(*) FROM ue WHERE id=? AND filiere_id=? AND ecole_id=?");
+        $owns->execute([$id, $coordFil, $ecoleId]);
+        if (!$owns->fetchColumn()) {
+            setFlash('error', 'Action non autorisée.');
+            redirect('/modules/pedagogique/ue.php');
+        }
+    }
     $check = $db->prepare("SELECT COUNT(*) FROM matieres WHERE ue_id = ? AND ecole_id = ?");
     $check->execute([$id, $ecoleId]);
     if ($check->fetchColumn() > 0) {
@@ -26,8 +36,8 @@ if ($action === 'delete' && $id && hasRole('admin') && verifyCsrfToken($_GET['cs
     redirect('/modules/pedagogique/ue.php');
 }
 
-// Save (add or edit)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && hasRole('admin')) {
+// Save (add or edit) — admin ou coordinateur
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && hasRole(['admin', 'coordinateur'])) {
     if (!verifyCsrfToken($_POST['csrf'] ?? '')) {
         $errors[] = 'Jeton CSRF invalide.';
     } else {
@@ -39,9 +49,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && hasRole('admin')) {
             'credit'       => max(1,   (int)($_POST['credit']           ?? 3)),
             'filiere_id'   => (int)($_POST['filiere_id'] ?? 0) ?: null,
         ];
+        // Coordinateur : forcer sa filière (ne peut pas choisir une autre)
+        if ($isCoord) {
+            $data['filiere_id'] = getCoordinateurFiliereId() ?: null;
+        }
 
         if (empty($data['nom']))     $errors[] = 'Le nom est obligatoire.';
         if (empty($data['code_ue'])) $errors[] = 'Le code UE est obligatoire.';
+        if (!$data['filiere_id'])    $errors[] = 'La filière est obligatoire.';
 
         if (empty($errors)) {
             $editId = (int)($_POST['edit_id'] ?? 0);
@@ -70,7 +85,13 @@ $fFilter = (int)($_GET['filiere_id'] ?? 0);
 $sFilter = (int)($_GET['semestre_num'] ?? 0);
 $where   = ['u.ecole_id=?'];
 $params  = [$ecoleId];
-if ($fFilter) { $where[] = 'u.filiere_id=?'; $params[] = $fFilter; }
+// Coordinateur : restreindre à sa filière
+if ($isCoord) {
+    $coordFil = getCoordinateurFiliereId();
+    if ($coordFil) { $where[] = 'u.filiere_id=?'; $params[] = $coordFil; }
+} else {
+    if ($fFilter) { $where[] = 'u.filiere_id=?'; $params[] = $fFilter; }
+}
 if ($sFilter) { $where[] = 'u.semestre_num=?'; $params[] = $sFilter; }
 
 $stmt = $db->prepare("
@@ -84,7 +105,23 @@ $stmt = $db->prepare("
 $stmt->execute($params);
 $ues = $stmt->fetchAll();
 
-$filieres = getFilieres();
+// Uniquement les filières de niveau supérieur
+if ($ecoleId > 0) {
+    $fsStmt = $db->prepare("SELECT * FROM filieres WHERE niveau_superieur=1 AND actif=1 AND ecole_id=? ORDER BY nom");
+    $fsStmt->execute([$ecoleId]);
+} else {
+    $fsStmt = $db->query("SELECT * FROM filieres WHERE niveau_superieur=1 AND actif=1 ORDER BY nom");
+}
+$filieres = $fsStmt->fetchAll();
+
+// Filière du coordinateur (pour l'affichage dans le modal)
+$coordFiliere = null;
+if ($isCoord) {
+    $coordFil = getCoordinateurFiliereId();
+    foreach ($filieres as $f) {
+        if ($f['id'] == $coordFil) { $coordFiliere = $f; break; }
+    }
+}
 
 $pageTitle  = 'Unités d\'Enseignement (UE)';
 $breadcrumb = ['Pédagogie' => null, 'UE' => null];
@@ -93,7 +130,7 @@ include APP_ROOT . '/includes/header.php';
 
 <div class="page-header">
   <h2><i class="fas fa-layer-group me-2 text-primary"></i>Unités d'Enseignement (UE)</h2>
-  <?php if (hasRole('admin')): ?>
+  <?php if (hasRole(['admin', 'coordinateur'])): ?>
   <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#ueModal" onclick="setFormMode('add')">
     <i class="fas fa-plus me-2"></i>Nouvelle UE
   </button>
@@ -104,9 +141,10 @@ include APP_ROOT . '/includes/header.php';
 <div class="card mb-4">
   <div class="card-body py-3">
     <form method="GET" class="row g-2 align-items-end">
+      <?php if (!$isCoord): ?>
       <div class="col-md-4">
         <select name="filiere_id" class="form-select" onchange="this.form.submit()">
-          <option value="">Toutes filières</option>
+          <option value="">Toutes filières (niveau supérieur)</option>
           <?php foreach ($filieres as $f): ?>
             <option value="<?= $f['id'] ?>" <?= $fFilter == $f['id'] ? 'selected' : '' ?>>
               <?= h($f['code']) ?> – <?= h($f['nom']) ?>
@@ -114,6 +152,7 @@ include APP_ROOT . '/includes/header.php';
           <?php endforeach; ?>
         </select>
       </div>
+      <?php endif; ?>
       <div class="col-md-3">
         <select name="semestre_num" class="form-select" onchange="this.form.submit()">
           <option value="">Tous semestres</option>
@@ -151,7 +190,7 @@ include APP_ROOT . '/includes/header.php';
           <th class="text-center">Coef.</th>
           <th class="text-center">Crédits ECTS</th>
           <th class="text-center">Matières</th>
-          <th>Actions</th>
+          <?php if (hasRole(['admin', 'coordinateur'])): ?><th>Actions</th><?php endif; ?>
         </tr>
       </thead>
       <tbody>
@@ -181,8 +220,8 @@ include APP_ROOT . '/includes/header.php';
               <?= $u['nb_matieres'] ?> matière(s)
             </a>
           </td>
+          <?php if (hasRole(['admin', 'coordinateur'])): ?>
           <td>
-            <?php if (hasRole('admin')): ?>
             <div class="d-flex gap-1">
               <button class="btn btn-icon btn-sm btn-outline-warning"
                       onclick='editUE(<?= json_encode($u) ?>)'
@@ -196,8 +235,8 @@ include APP_ROOT . '/includes/header.php';
                 <i class="fas fa-trash"></i>
               </a>
             </div>
-            <?php endif; ?>
           </td>
+          <?php endif; ?>
         </tr>
         <?php endforeach; ?>
       </tbody>
@@ -229,13 +268,18 @@ include APP_ROOT . '/includes/header.php';
                      placeholder="Ex: Sciences Biologiques Fondamentales" required>
             </div>
             <div class="col-md-6">
-              <label class="form-label">Filière</label>
-              <select name="filiere_id" id="f_filiere_id" class="form-select">
-                <option value="">-- Toutes filières --</option>
-                <?php foreach ($filieres as $f): ?>
-                  <option value="<?= $f['id'] ?>"><?= h($f['code']) ?> – <?= h($f['nom']) ?></option>
-                <?php endforeach; ?>
-              </select>
+              <label class="form-label">Filière (niveau supérieur) <span class="text-danger">*</span></label>
+              <?php if ($isCoord && $coordFiliere): ?>
+                <input type="hidden" name="filiere_id" value="<?= $coordFiliere['id'] ?>">
+                <input type="text" class="form-control bg-light" value="<?= h($coordFiliere['code']) ?> – <?= h($coordFiliere['nom']) ?>" disabled>
+              <?php else: ?>
+                <select name="filiere_id" id="f_filiere_id" class="form-select" required>
+                  <option value="">-- Sélectionner --</option>
+                  <?php foreach ($filieres as $f): ?>
+                    <option value="<?= $f['id'] ?>"><?= h($f['code']) ?> – <?= h($f['nom']) ?></option>
+                  <?php endforeach; ?>
+                </select>
+              <?php endif; ?>
             </div>
             <div class="col-md-6">
               <label class="form-label">Semestre du programme</label>
@@ -272,23 +316,25 @@ include APP_ROOT . '/includes/header.php';
 <script>
 function setFormMode(mode) {
   document.getElementById('ueModalTitle').textContent = mode === 'add' ? 'Nouvelle UE' : "Modifier l'UE";
-  document.getElementById('edit_id').value      = '';
-  document.getElementById('f_code_ue').value    = '';
-  document.getElementById('f_nom').value        = '';
-  document.getElementById('f_filiere_id').value = '';
+  document.getElementById('edit_id').value        = '';
+  document.getElementById('f_code_ue').value      = '';
+  document.getElementById('f_nom').value          = '';
+  const filEl = document.getElementById('f_filiere_id');
+  if (filEl) filEl.value = '';
   document.getElementById('f_semestre_num').value = '1';
-  document.getElementById('f_coefficient').value = '1';
-  document.getElementById('f_credit').value     = '3';
+  document.getElementById('f_coefficient').value  = '1';
+  document.getElementById('f_credit').value       = '3';
 }
 function editUE(u) {
   document.getElementById('ueModalTitle').textContent = "Modifier l'UE";
   document.getElementById('edit_id').value        = u.id;
-  document.getElementById('f_code_ue').value      = u.code_ue  || '';
-  document.getElementById('f_nom').value          = u.nom      || '';
-  document.getElementById('f_filiere_id').value   = u.filiere_id  || '';
+  document.getElementById('f_code_ue').value      = u.code_ue     || '';
+  document.getElementById('f_nom').value          = u.nom         || '';
+  const filEl = document.getElementById('f_filiere_id');
+  if (filEl) filEl.value = u.filiere_id || '';
   document.getElementById('f_semestre_num').value = u.semestre_num || '1';
   document.getElementById('f_coefficient').value  = u.coefficient  || '1';
-  document.getElementById('f_credit').value       = u.credit     || '3';
+  document.getElementById('f_credit').value       = u.credit       || '3';
   new bootstrap.Modal(document.getElementById('ueModal')).show();
 }
 </script>

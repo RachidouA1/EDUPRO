@@ -166,6 +166,7 @@ HTML;
         ['/etudiants/'],
         '<a href="' . APP_URL . '/modules/etudiants/index.php" class="nav-link' . isActive('/etudiants/index','/etudiants/view','/etudiants/edit','/etudiants/paiements','/etudiants/delete') . '"><i class="fas fa-user-graduate"></i> Liste des étudiants</a>'
       . '<a href="' . APP_URL . '/modules/etudiants/add.php" class="nav-link' . isActive('/etudiants/add') . '"><i class="fas fa-user-plus"></i> Nouvel étudiant</a>'
+      . '<a href="' . APP_URL . '/modules/etudiants/absences.php" class="nav-link' . isActive('/etudiants/absences','/etudiants/rapport_absences') . '"><i class="fas fa-calendar-times"></i> Absences</a>'
       . '<a href="' . APP_URL . '/modules/etudiants/promotion.php" class="nav-link' . isActive('/etudiants/promotion') . '"><i class="fas fa-level-up-alt"></i> Passage en classe sup.</a>'
     ) ?>
 
@@ -235,6 +236,7 @@ HTML;
         ['/etudiants/'],
         '<a href="' . APP_URL . '/modules/etudiants/index.php" class="nav-link' . isActive('/etudiants/index','/etudiants/view','/etudiants/edit','/etudiants/delete') . '"><i class="fas fa-user-graduate"></i> Liste des étudiants</a>'
       . '<a href="' . APP_URL . '/modules/etudiants/add.php" class="nav-link' . isActive('/etudiants/add') . '"><i class="fas fa-user-plus"></i> Nouvel étudiant</a>'
+      . '<a href="' . APP_URL . '/modules/etudiants/absences.php" class="nav-link' . isActive('/etudiants/absences','/etudiants/rapport_absences') . '"><i class="fas fa-calendar-times"></i> Absences</a>'
       . '<a href="' . APP_URL . '/modules/etudiants/promotion.php" class="nav-link' . isActive('/etudiants/promotion') . '"><i class="fas fa-level-up-alt"></i> Passage en classe sup.</a>'
     ) ?>
 
@@ -301,6 +303,7 @@ HTML;
     <?= sidebarGroup('coord-section', 'Ma Section', 'fa-user-graduate',
         ['/etudiants/'],
         '<a href="' . APP_URL . '/modules/etudiants/index.php" class="nav-link' . isActive('/etudiants/index','/etudiants/view') . '"><i class="fas fa-user-graduate"></i> Mes Étudiants</a>'
+      . '<a href="' . APP_URL . '/modules/etudiants/absences.php" class="nav-link' . isActive('/etudiants/absences','/etudiants/rapport_absences') . '"><i class="fas fa-calendar-times"></i> Absences</a>'
     ) ?>
 
     <?= sidebarGroup('coord-enseignants', 'Enseignants', 'fa-chalkboard-teacher',
@@ -311,7 +314,8 @@ HTML;
 
     <?= sidebarGroup('coord-pedagogie', 'Pédagogie', 'fa-book-open',
         ['/pedagogique/', '/emploi_du_temps/'],
-        '<a href="' . APP_URL . '/modules/pedagogique/matieres.php" class="nav-link' . isActive('/pedagogique/matieres') . '"><i class="fas fa-book-open"></i> Matières / Modules</a>'
+        '<a href="' . APP_URL . '/modules/pedagogique/ue.php" class="nav-link' . isActive('/pedagogique/ue') . '"><i class="fas fa-layer-group"></i> Unités d\'Ens. (UE)</a>'
+      . '<a href="' . APP_URL . '/modules/pedagogique/matieres.php" class="nav-link' . isActive('/pedagogique/matieres') . '"><i class="fas fa-book-open"></i> Matières / Modules</a>'
       . '<a href="' . APP_URL . '/modules/pedagogique/notes.php" class="nav-link' . isActive('/pedagogique/notes') . '"><i class="fas fa-eye"></i> Notes</a>'
       . '<a href="' . APP_URL . '/modules/pedagogique/bulletins.php" class="nav-link' . isActive('/pedagogique/bulletins') . '"><i class="fas fa-file-alt"></i> Relevés de notes</a>'
       . '<a href="' . APP_URL . '/modules/pedagogique/pv.php" class="nav-link' . isActive('/pedagogique/pv') . '"><i class="fas fa-file-contract"></i> PV Supérieur</a>'

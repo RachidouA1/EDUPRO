@@ -80,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (hasRole('admin') || hasRole('coord
             'niveau_id'      => (int)($_POST['niveau_id']               ?? 0),
             'semestre_id'    => $isFilSup ? null : ((int)($_POST['semestre_id']  ?? 0) ?: null),
             'semestre_num'   => $isFilSup ? ((int)($_POST['semestre_num'] ?? 0) ?: null) : null,
-            'coefficient'    => (float)($_POST['coefficient']           ?? 1),
+            'coefficient'    => max(0.25, (float)($_POST['coefficient']  ?? 1)),
             'volume_horaire' => (int)($_POST['volume_horaire']          ?? 0),
             'enseignant_id'  => (int)($_POST['enseignant_id']           ?? 0),
             'ue_id'          => (int)($_POST['ue_id']                   ?? 0) ?: null,
@@ -134,8 +134,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ue_action']) && hasRo
         $ueCode   = strtoupper(sanitize($_POST['ue_code']    ?? ''));
         $ueNom    = sanitize($_POST['ue_nom']                ?? '');
         $ueFil    = (int)($_POST['ue_filiere_id']            ?? 0);
-        $ueSemId  = (int)($_POST['ue_semestre_id']           ?? 0) ?: null;
         $ueSemNum = (int)($_POST['ue_semestre_num']          ?? 0) ?: null;
+        $ueCoef   = max(0.5, (float)($_POST['ue_coefficient'] ?? 1));
+        $ueCredit = max(1,   (int)($_POST['ue_credit']        ?? 3));
         $ueEdit   = (int)($_POST['ue_edit_id']               ?? 0);
 
         if (!$ueCode || !$ueNom || !$ueFil) {
@@ -143,12 +144,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ue_action']) && hasRo
         } else {
             try {
                 if ($ueEdit) {
-                    $db->prepare("UPDATE ue SET code_ue=?,nom=?,filiere_id=?,semestre_id=?,semestre_num=? WHERE id=?")
-                       ->execute([$ueCode, $ueNom, $ueFil, $ueSemId, $ueSemNum, $ueEdit]);
+                    $db->prepare("UPDATE ue SET code_ue=?,nom=?,filiere_id=?,semestre_num=?,coefficient=?,credit=? WHERE id=?")
+                       ->execute([$ueCode, $ueNom, $ueFil, $ueSemNum, $ueCoef, $ueCredit, $ueEdit]);
                     setFlash('success', 'UE modifiée.');
                 } else {
-                    $db->prepare("INSERT INTO ue (ecole_id,code_ue,nom,filiere_id,semestre_id,semestre_num) VALUES (?,?,?,?,?,?)")
-                       ->execute([$ecoleId, $ueCode, $ueNom, $ueFil, $ueSemId, $ueSemNum]);
+                    $db->prepare("INSERT INTO ue (ecole_id,code_ue,nom,filiere_id,semestre_num,coefficient,credit) VALUES (?,?,?,?,?,?,?)")
+                       ->execute([$ecoleId, $ueCode, $ueNom, $ueFil, $ueSemNum, $ueCoef, $ueCredit]);
                     setFlash('success', 'UE créée.');
                 }
             } catch (PDOException $e) {
@@ -215,11 +216,10 @@ if ($ecoleId > 0) {
     $ulStmt->execute([$ecoleId]);
     $ues_list = $ulStmt->fetchAll();
     $uaStmt = $db->prepare("
-        SELECT u.*, f.nom as filiere_nom, f.code as filiere_code, s.nom as semestre_nom,
+        SELECT u.*, f.nom as filiere_nom, f.code as filiere_code,
                (SELECT COUNT(*) FROM matieres m WHERE m.ue_id=u.id AND m.actif=1) as nb_matieres
         FROM ue u
         JOIN filieres f ON f.id = u.filiere_id
-        LEFT JOIN semestres s ON s.id = u.semestre_id
         WHERE u.actif = 1 AND f.ecole_id = ?
         ORDER BY f.nom, u.semestre_num, u.code_ue
     ");
@@ -230,11 +230,10 @@ if ($ecoleId > 0) {
     $filieresSup = $db->query("SELECT * FROM filieres WHERE niveau_superieur=1 AND actif=1 ORDER BY nom")->fetchAll();
     $ues_list    = $db->query("SELECT id, nom, code_ue, semestre_num, filiere_id FROM ue WHERE actif=1 ORDER BY filiere_id, semestre_num, code_ue")->fetchAll();
     $ues_all     = $db->query("
-        SELECT u.*, f.nom as filiere_nom, f.code as filiere_code, s.nom as semestre_nom,
+        SELECT u.*, f.nom as filiere_nom, f.code as filiere_code,
                (SELECT COUNT(*) FROM matieres m WHERE m.ue_id=u.id AND m.actif=1) as nb_matieres
         FROM ue u
         JOIN filieres f ON f.id = u.filiere_id
-        LEFT JOIN semestres s ON s.id = u.semestre_id
         WHERE u.actif = 1
         ORDER BY f.nom, u.semestre_num, u.code_ue
     ")->fetchAll();
@@ -351,11 +350,11 @@ include APP_ROOT . '/includes/header.php';
   <div class="table-responsive">
     <table class="table mb-0">
       <thead>
-        <tr><th>Code UE</th><th>Nom</th><th>Filière</th><th>Semestre</th><th>Matières</th><?php if (hasRole(['admin','coordinateur'])): ?><th>Actions</th><?php endif; ?></tr>
+        <tr><th>Code UE</th><th>Nom</th><th>Filière</th><th>Semestre</th><th class="text-center">Coef.</th><th class="text-center">Crédits</th><th>Matières</th><?php if (hasRole(['admin','coordinateur'])): ?><th>Actions</th><?php endif; ?></tr>
       </thead>
       <tbody>
         <?php if (empty($ues_all)): ?>
-          <tr><td colspan="6" class="text-center text-muted py-4">
+          <tr><td colspan="8" class="text-center text-muted py-4">
             <i class="fas fa-layer-group d-block mb-2" style="font-size:2rem;opacity:.3"></i>
             Aucune UE créée — créez une UE puis assignez-y des matières.
           </td></tr>
@@ -365,7 +364,9 @@ include APP_ROOT . '/includes/header.php';
           <td><span class="badge bg-warning text-dark"><?= h($ue['code_ue']) ?></span></td>
           <td class="fw-600"><?= h($ue['nom']) ?></td>
           <td><span class="badge bg-primary bg-opacity-10 text-primary"><?= h($ue['filiere_code']) ?></span></td>
-          <td class="text-muted fs-sm"><?= $ue['semestre_nom'] ? h($ue['semestre_nom']) : ($ue['semestre_num'] ? 'S'.$ue['semestre_num'] : '–') ?></td>
+          <td><span class="badge bg-info text-dark"><?= $ue['semestre_num'] ? 'S'.$ue['semestre_num'] : '–' ?></span></td>
+          <td class="text-center"><span class="badge bg-primary"><?= $ue['coefficient'] ?></span></td>
+          <td class="text-center"><span class="badge bg-success"><?= $ue['credit'] ?> ECTS</span></td>
           <td><span class="badge bg-secondary"><?= $ue['nb_matieres'] ?> matière(s)</span></td>
           <?php if (hasRole(['admin','coordinateur'])): ?>
           <td>
@@ -457,7 +458,7 @@ include APP_ROOT . '/includes/header.php';
             </div>
             <div class="col-md-4">
               <label class="form-label">Coefficient</label>
-              <input type="number" name="coefficient" id="f_coefficient" class="form-control" min="0.5" max="10" step="0.5" value="1">
+              <input type="number" name="coefficient" id="f_coefficient" class="form-control" min="0.25" max="10" step="0.25" value="1">
             </div>
             <div class="col-md-4">
               <label class="form-label">Volume horaire (h)</label>
@@ -526,31 +527,32 @@ include APP_ROOT . '/includes/header.php';
                 <?php endforeach; ?>
               </select>
             </div>
-            <div class="col-md-3">
-              <label class="form-label">N° Semestre</label>
-              <select name="ue_semestre_num" id="ue_semestre_num" class="form-select">
-                <option value="">–</option>
-                <option value="1">S1</option>
-                <option value="2">S2</option>
-                <option value="3">S3</option>
-                <option value="4">S4</option>
-                <option value="5">S5</option>
-                <option value="6">S6</option>
+            <div class="col-md-6">
+              <label class="form-label">Semestre du programme <span class="text-danger">*</span></label>
+              <select name="ue_semestre_num" id="ue_semestre_num" class="form-select" required>
+                <option value="">-- Sélectionner --</option>
+                <option value="1">S1 — Semestre 1 (Année 1)</option>
+                <option value="2">S2 — Semestre 2 (Année 1)</option>
+                <option value="3">S3 — Semestre 3 (Année 2)</option>
+                <option value="4">S4 — Semestre 4 (Année 2)</option>
+                <option value="5">S5 — Semestre 5 (Année 3)</option>
+                <option value="6">S6 — Semestre 6 (Année 3)</option>
               </select>
             </div>
-            <div class="col-md-3">
-              <label class="form-label">Semestre lié</label>
-              <select name="ue_semestre_id" id="ue_semestre_id" class="form-select">
-                <option value="">–</option>
-                <?php foreach ($semestres as $s): ?>
-                  <option value="<?= $s['id'] ?>"><?= h($s['annee_libelle'] ?? '') ?> – <?= h($s['nom']) ?></option>
-                <?php endforeach; ?>
-              </select>
+            <div class="col-md-4">
+              <label class="form-label">Coefficient <span class="text-danger">*</span></label>
+              <input type="number" name="ue_coefficient" id="ue_coefficient" class="form-control"
+                     min="0.5" max="10" step="0.5" value="1" required>
             </div>
-            <div class="col-12">
-              <div class="alert alert-info py-2 fs-sm mb-0">
+            <div class="col-md-4">
+              <label class="form-label">Crédits ECTS <span class="text-danger">*</span></label>
+              <input type="number" name="ue_credit" id="ue_credit" class="form-control"
+                     min="1" max="30" step="1" value="3" required>
+            </div>
+            <div class="col-md-4 d-flex align-items-end">
+              <div class="alert alert-info py-2 fs-sm mb-0 w-100">
                 <i class="fas fa-info-circle me-1"></i>
-                Après création, assignez les matières à cette UE via le champ <strong>"Unité d'Enseignement"</strong> du formulaire matière.
+                Non lié à une année scolaire.
               </div>
             </div>
           </div>
@@ -715,16 +717,19 @@ function editMatiere(m) {
 function resetUeForm() {
   document.getElementById('ueModalTitle').textContent = 'Nouvelle Unité d\'Enseignement';
   ['ue_edit_id','ue_code','ue_nom'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  ['ue_filiere_id','ue_semestre_num','ue_semestre_id'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['ue_filiere_id','ue_semestre_num'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const c = document.getElementById('ue_coefficient'); if (c) c.value = '1';
+  const cr = document.getElementById('ue_credit');     if (cr) cr.value = '3';
 }
 function editUe(u) {
   document.getElementById('ueModalTitle').textContent = 'Modifier l\'UE';
-  document.getElementById('ue_edit_id').value    = u.id;
-  document.getElementById('ue_code').value       = u.code_ue;
-  document.getElementById('ue_nom').value        = u.nom;
-  document.getElementById('ue_filiere_id').value = u.filiere_id;
+  document.getElementById('ue_edit_id').value      = u.id;
+  document.getElementById('ue_code').value         = u.code_ue;
+  document.getElementById('ue_nom').value          = u.nom;
+  document.getElementById('ue_filiere_id').value   = u.filiere_id;
   document.getElementById('ue_semestre_num').value = u.semestre_num || '';
-  document.getElementById('ue_semestre_id').value  = u.semestre_id  || '';
+  document.getElementById('ue_coefficient').value  = u.coefficient  || '1';
+  document.getElementById('ue_credit').value       = u.credit       || '3';
   new bootstrap.Modal(document.getElementById('ueModal')).show();
 }
 </script>

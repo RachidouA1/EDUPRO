@@ -65,7 +65,32 @@ $breadcrumb = ['Étudiants' => null];
 include APP_ROOT . '/includes/header.php';
 ?>
 
-<div class="page-header">
+<?php
+$ecole        = getCurrentEcole();
+$nomEcole     = $ecole['nom']      ?? getParam('etablissement_nom', 'E-EDU PRO');
+$adresseEcole = $ecole['adresse']  ?? getParam('etablissement_adresse', '');
+$villeEcole   = $ecole['ville']    ?? getParam('etablissement_ville', '');
+$telEcole     = $ecole['telephone']?? getParam('etablissement_telephone', '');
+$logoPath     = $ecole['logo_path']?? '';
+?>
+
+<!-- En-tête imprimable (masqué à l'écran) -->
+<div class="print-only text-center mb-3" style="border-bottom:2px solid #1565c0;padding-bottom:12px;">
+  <?php if ($logoPath): ?>
+  <img src="<?= APP_URL . '/' . h($logoPath) ?>" alt="Logo" style="height:72px;object-fit:contain;display:block;margin:0 auto 8px;">
+  <?php endif; ?>
+  <div style="font-size:1.3rem;font-weight:700;letter-spacing:.5px;"><?= h($nomEcole) ?></div>
+  <?php if ($adresseEcole || $villeEcole): ?>
+  <div style="font-size:.9rem;color:#555;"><?= h(trim($adresseEcole . ($villeEcole ? ' – ' . $villeEcole : ''))) ?></div>
+  <?php endif; ?>
+  <?php if ($telEcole): ?>
+  <div style="font-size:.85rem;color:#555;">Tél : <?= h($telEcole) ?></div>
+  <?php endif; ?>
+  <div style="font-size:1.1rem;font-weight:600;margin-top:10px;">Liste des Étudiants</div>
+  <div style="font-size:.82rem;color:#888;">Édité le <?= date('d/m/Y') ?></div>
+</div>
+
+<div class="page-header no-print">
   <h2><i class="fas fa-user-graduate me-2 text-primary"></i>
     <?= $isCoord ? 'Étudiants de ma section' : 'Gestion des Étudiants' ?>
   </h2>
@@ -77,7 +102,7 @@ include APP_ROOT . '/includes/header.php';
 </div>
 
 <!-- Filters -->
-<div class="card mb-4">
+<div class="card mb-4 no-print">
   <div class="card-body py-3">
     <form method="GET" class="row g-2 align-items-end">
       <div class="col-md-3">
@@ -139,6 +164,9 @@ include APP_ROOT . '/includes/header.php';
       ?>
       <span class="badge" style="background:#1565c0;font-size:.8rem"><i class="fas fa-mars me-1"></i><?= $totalM ?> Masculin</span>
       <span class="badge" style="background:#ad1457;font-size:.8rem"><i class="fas fa-venus me-1"></i><?= $totalF ?> Féminin</span>
+      <a href="<?= APP_URL ?>/modules/etudiants/export_excel.php?<?= h(http_build_query($_GET)) ?>" class="btn btn-sm btn-outline-success no-print">
+        <i class="fas fa-file-excel me-1"></i>Excel
+      </a>
       <button onclick="window.print()" class="btn btn-sm btn-outline-secondary no-print">
         <i class="fas fa-print me-1"></i>Imprimer
       </button>
