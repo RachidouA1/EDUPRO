@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/../../config/config.php';
 requireLogin();
-requireRole('admin');
+requireRole(['admin', 'superadmin']);
 
 $db      = getDB();
 $ecoleId = getEcoleId();

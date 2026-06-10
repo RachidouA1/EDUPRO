@@ -52,6 +52,16 @@ function requireLogin(): void {
 
 function requireRole($role): void {
     requireLogin();
+    // Superadmin manages schools — block access to all school-operation modules
+    // unless the page explicitly lists 'superadmin' in its allowed roles.
+    if (isSuperAdmin()) {
+        $roles = is_array($role) ? $role : [$role];
+        if (!in_array('superadmin', $roles)) {
+            header('Location: ' . APP_URL . '/dashboard.php');
+            exit;
+        }
+        return;
+    }
     if (!hasRole($role)) {
         setFlash('error', 'Accès refusé. Vous n\'avez pas les droits nécessaires.');
         header('Location: ' . APP_URL . '/dashboard.php');

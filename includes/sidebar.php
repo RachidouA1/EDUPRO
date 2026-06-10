@@ -140,20 +140,13 @@ HTML;
       . '<a href="' . APP_URL . '/modules/superadmin/profil.php" class="nav-link' . isActive('/superadmin/profil') . '"><i class="fas fa-user-circle"></i> Mon profil</a>'
     ) ?>
 
-    <?php if (getEcoleId()): // SuperAdmin with school context — show school menus ?>
+    <?php if (getEcoleId()): // SuperAdmin with school context — show school setup menus only ?>
 
-    <?= sidebarGroup('sa-admin', 'Administration école', 'fa-cogs',
+    <?= sidebarGroup('sa-admin', 'Configuration école', 'fa-cogs',
         ['/administration/'],
         '<a href="' . APP_URL . '/modules/administration/filieres.php" class="nav-link' . isActive('/administration/filieres') . '"><i class="fas fa-layer-group"></i> Filières &amp; Niveaux</a>'
-      . '<a href="' . APP_URL . '/modules/administration/annees.php" class="nav-link' . isActive('/administration/annees') . '"><i class="fas fa-calendar-alt"></i> Années académiques</a>'
       . '<a href="' . APP_URL . '/modules/administration/utilisateurs.php" class="nav-link' . isActive('/administration/utilisateurs') . '"><i class="fas fa-users-cog"></i> Utilisateurs</a>'
       . '<a href="' . APP_URL . '/modules/administration/parametres.php" class="nav-link' . isActive('/administration/parametres') . '"><i class="fas fa-cog"></i> Paramètres école</a>'
-    ) ?>
-
-    <?= sidebarGroup('sa-etudiants', 'Apprenants', 'fa-user-graduate',
-        ['/etudiants/'],
-        '<a href="' . APP_URL . '/modules/etudiants/index.php" class="nav-link' . isActive('/etudiants/index') . '"><i class="fas fa-user-graduate"></i> Liste des étudiants</a>'
-      . '<a href="' . APP_URL . '/modules/etudiants/add.php" class="nav-link' . isActive('/etudiants/add') . '"><i class="fas fa-user-plus"></i> Nouvel étudiant</a>'
     ) ?>
 
     <?php endif; // end school context ?>
