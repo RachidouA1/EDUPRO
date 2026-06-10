@@ -210,15 +210,15 @@ function getCoordinateurFiliereIds(): array {
 
 /**
  * Checks if the current coordinator has access to a given filière (+ optional niveau).
- * Access is granted if any section matches the filière, with:
- *  - niveau_id=NULL in the section → access to all levels of that filière
- *  - specific niveau_id → only that level
+ * - No $niveauId → filière-level check: true if any section exists for that filière
+ * - With $niveauId → true if section has niveau_id=NULL (all levels) or matches exactly
  */
 function coordinateurCanAccess(int $filiereId, ?int $niveauId = null): bool {
     foreach (getCoordinateurSections() as $s) {
         if ((int)$s['filiere_id'] !== $filiereId) continue;
-        if ($s['niveau_id'] === null) return true;          // all levels
-        if ($niveauId !== null && (int)$s['niveau_id'] === $niveauId) return true;
+        if ($niveauId === null) return true;                // filière-only check passes
+        if ($s['niveau_id'] === null) return true;          // all levels granted
+        if ((int)$s['niveau_id'] === $niveauId) return true;
     }
     return false;
 }

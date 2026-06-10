@@ -55,7 +55,7 @@ function effectiveFormule(string $fCode, string $matFormule): string {
 // ── Save notes ───────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['notes'])) {
     if (!$canEdit) {
-        setFlash('error', 'Accès refusé. Seule la scolarité peut enregistrer des notes.');
+        setFlash('error', 'Accès refusé. La saisie des notes est réservée à la scolarité, l\'administration et la direction.');
         redirect('/modules/pedagogique/notes.php?' . http_build_query($_GET));
     }
     if (!verifyCsrfToken($_POST['csrf'] ?? '')) {
@@ -93,7 +93,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['notes'])) {
             $saved++;
         }
         setFlash('success', "$saved note(s) enregistrée(s) — Session $sessId.");
-        redirect("/modules/pedagogique/notes.php?annee_id={$aId}&semestre_id={$sId}&matiere_id={$mId}&session={$sessId}");
+        redirect('/modules/pedagogique/notes.php?' . http_build_query(array_filter([
+            'annee_id'   => $aId,
+            'semestre_id'=> $sId ?? '',
+            'matiere_id' => $mId,
+            'session'    => $sessId,
+            'filiere_id' => (int)($_POST['filiere_id'] ?? 0),
+            'niveau_id'  => (int)($_POST['niveau_id']  ?? 0),
+            'ue_id'      => (int)($_POST['ue_id']      ?? 0),
+        ])));
     }
 }
 
@@ -115,8 +123,14 @@ if ($user['role'] === 'enseignant') {
     $mQuery  .= " AND m.enseignant_id IN (SELECT id FROM enseignants WHERE email=?)";
     $mParams[] = $user['email'];
 } elseif ($user['role'] === 'coordinateur') {
-    $mQuery  .= " AND m.filiere_id = ?";
-    $mParams[] = getCoordinateurFiliereId();
+    $coordFIds = getCoordinateurFiliereIds();
+    if ($coordFIds) {
+        $ph      = implode(',', array_fill(0, count($coordFIds), '?'));
+        $mQuery .= " AND m.filiere_id IN ($ph)";
+        $mParams = array_merge($mParams, $coordFIds);
+    } else {
+        $mQuery .= " AND 1=0";
+    }
 }
 $mQuery .= " ORDER BY f.nom, n.ordre, m.nom";
 $mStmt = $db->prepare($mQuery);
@@ -728,6 +742,9 @@ document.addEventListener('DOMContentLoaded', function () {
       <input type="hidden" name="semestre_id"    value="<?= $semestreId ?>">
       <input type="hidden" name="session"        value="<?= $sessionNum ?>">
       <input type="hidden" name="formule_calcul" value="<?= h($activeFormule) ?>">
+      <input type="hidden" name="filiere_id"     value="<?= $filterFiliereId ?>">
+      <input type="hidden" name="niveau_id"      value="<?= $filterNiveauId ?>">
+      <input type="hidden" name="ue_id"          value="<?= $filterUeId ?>">
 
       <div class="table-responsive">
         <table class="table table-hover">

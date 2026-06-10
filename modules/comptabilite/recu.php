@@ -424,23 +424,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add')
     if (!verifyCsrfToken($_POST['csrf'] ?? '')) {
         $errors[] = 'Jeton invalide.';
     } else {
-        $etuId   = (int)($_POST['etudiant_id']  ?? 0);
-        $libelle = sanitize($_POST['libelle']    ?? '');
-        $libelleCustom = sanitize($_POST['libelle_custom'] ?? '');
-        if ($libelle === 'autre') $libelle = $libelleCustom;
-        $montant = (float)($_POST['montant']     ?? 0);
-        $verse   = (float)($_POST['montant_paye']?? 0);
-        $date    = sanitize($_POST['date_paiement'] ?? date('Y-m-d'));
-        $mode    = sanitize($_POST['mode_paiement'] ?? 'especes');
-        $ref     = sanitize($_POST['reference']  ?? '');
-        $anneeId = (int)($_POST['annee_id']      ?? 0);
+        $etuId     = (int)($_POST['etudiant_id']     ?? 0);
+        $typeFrais = sanitize($_POST['type_frais']    ?? '');
+        $montant   = (float)($_POST['montant']        ?? 0);
+        $verse     = (float)($_POST['montant_paye']   ?? 0);
+        $date      = sanitize($_POST['date_recette']  ?? date('Y-m-d'));
+        $mode      = sanitize($_POST['mode_paiement'] ?? 'especes');
+        $ref       = sanitize($_POST['reference']     ?? '');
+        $anneeId   = (int)($_POST['annee_id']         ?? 0);
 
-        if (!$etuId)          $errors[] = 'Veuillez sélectionner un étudiant.';
-        if (empty($libelle))  $errors[] = 'Le libellé est obligatoire.';
-        if ($montant <= 0)    $errors[] = 'Le montant doit être supérieur à 0.';
+        $libellesMap = [
+            'inscription' => "Frais d'inscription",
+            'scolarite'   => 'Frais de formation',
+            'examen'      => "Frais d'examen",
+        ];
+
+        if (!$etuId)                                      $errors[] = 'Veuillez sélectionner un apprenant.';
+        if (!array_key_exists($typeFrais, $libellesMap))  $errors[] = 'Sélectionnez un type de frais.';
+        if ($montant <= 0)                                $errors[] = 'Le montant dû doit être supérieur à 0.';
+        if ($verse < 0)                                   $errors[] = 'Montant versé invalide.';
 
         if (empty($errors)) {
-            $statut = 'en_attente';
+            $libelle = $libellesMap[$typeFrais];
+            $statut  = 'en_attente';
             if ($verse >= $montant) $statut = 'complet';
             elseif ($verse > 0)     $statut = 'partiel';
 
@@ -453,7 +459,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add')
 
             $payId = (int)$db->lastInsertId();
 
-            // Sync with recettes
             if ($verse > 0) {
                 $etuRow = $db->prepare("SELECT nom, prenom FROM etudiants WHERE id=?");
                 $etuRow->execute([$etuId]);
@@ -462,12 +467,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add')
                     $db->prepare("INSERT INTO recettes (annee_id, date_recette, libelle, categorie, montant, mode_paiement, reference, created_by, ecole_id) VALUES (?,?,?,?,?,?,?,?,?)")
                        ->execute([$anneeId ?: null, $date,
                            $libelle . ' – ' . ($etuRow['prenom'] ?? '') . ' ' . ($etuRow['nom'] ?? ''),
-                           'scolarite', $verse, $mode, $numRecu, $user['id'], $ecoleId]);
+                           $typeFrais, $verse, $mode, $numRecu, $user['id'], $ecoleId]);
                 } else {
                     $db->prepare("INSERT INTO recettes (annee_id, date_recette, libelle, categorie, montant, mode_paiement, reference, created_by) VALUES (?,?,?,?,?,?,?,?)")
                        ->execute([$anneeId ?: null, $date,
                            $libelle . ' – ' . ($etuRow['prenom'] ?? '') . ' ' . ($etuRow['nom'] ?? ''),
-                           'scolarite', $verse, $mode, $numRecu, $user['id']]);
+                           $typeFrais, $verse, $mode, $numRecu, $user['id']]);
                 }
             }
 
@@ -489,7 +494,6 @@ $allEtudiants = $db->query("
 
 $annees      = getAnneesAcademiques();
 $anneeActive = getActiveAnnee();
-$typesFrais  = $db->query("SELECT * FROM types_frais ORDER BY nom")->fetchAll();
 
 // Filters
 $filterEtu  = (int)($_GET['etudiant_id'] ?? 0);
@@ -564,7 +568,7 @@ include APP_ROOT . '/includes/header.php';
   <div class="card-body py-3">
     <form method="GET" class="row g-2 align-items-end">
       <div class="col-md-5">
-        <label class="form-label fw-600 fs-sm">Étudiant</label>
+        <label class="form-label fw-bold fs-sm">Étudiant</label>
         <select name="etudiant_id" class="form-select">
           <option value="">Tous les étudiants</option>
           <?php foreach ($allEtudiants as $e): ?>
@@ -575,7 +579,7 @@ include APP_ROOT . '/includes/header.php';
         </select>
       </div>
       <div class="col-md-3">
-        <label class="form-label fw-600 fs-sm">Mois</label>
+        <label class="form-label fw-bold fs-sm">Mois</label>
         <input type="month" name="mois" class="form-control" value="<?= h($filterMois) ?>">
       </div>
       <div class="col-md-4 d-flex gap-2">
@@ -623,7 +627,7 @@ include APP_ROOT . '/includes/header.php';
               <span class="text-muted fs-sm">—</span>
             <?php endif; ?>
           </td>
-          <td class="fw-600 fs-sm"><?= h($r['etu_prenom'].' '.$r['etu_nom']) ?></td>
+          <td class="fw-bold fs-sm"><?= h($r['etu_prenom'].' '.$r['etu_nom']) ?></td>
           <td><code class="fs-sm"><?= h($r['matricule']) ?></code></td>
           <td class="fs-sm"><?= h($r['libelle']) ?></td>
           <td><?= formatMontant($r['montant']) ?></td>
@@ -654,8 +658,8 @@ include APP_ROOT . '/includes/header.php';
 <div class="modal fade" id="newRecuModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="fas fa-file-invoice me-2 text-primary"></i>Nouveau versement</h5>
+      <div class="modal-header" style="background:rgba(26,115,232,.07);border-bottom:2px solid #1a73e8">
+        <h5 class="modal-title"><i class="fas fa-graduation-cap me-2 text-primary"></i>Versement – Frais de formation</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <form method="POST">
@@ -663,21 +667,45 @@ include APP_ROOT . '/includes/header.php';
         <input type="hidden" name="action" value="add">
         <div class="modal-body">
 
-          <!-- Student picker -->
+          <!-- Type de frais -->
+          <div class="mb-4">
+            <label class="form-label fw-bold mb-2">Type de frais <span class="text-danger">*</span></label>
+            <div class="row g-2">
+              <div class="col-4">
+                <input type="radio" class="btn-check" name="type_frais" id="recuTypeInscription" value="inscription" autocomplete="off" required>
+                <label class="btn btn-outline-primary w-100 py-3 d-flex flex-column align-items-center gap-1" for="recuTypeInscription" style="font-size:.85rem">
+                  <i class="fas fa-id-card fa-lg"></i>Inscription
+                </label>
+              </div>
+              <div class="col-4">
+                <input type="radio" class="btn-check" name="type_frais" id="recuTypeScolarite" value="scolarite" autocomplete="off">
+                <label class="btn btn-outline-primary w-100 py-3 d-flex flex-column align-items-center gap-1" for="recuTypeScolarite" style="font-size:.85rem">
+                  <i class="fas fa-book-open fa-lg"></i>Formation
+                </label>
+              </div>
+              <div class="col-4">
+                <input type="radio" class="btn-check" name="type_frais" id="recuTypeExamen" value="examen" autocomplete="off">
+                <label class="btn btn-outline-primary w-100 py-3 d-flex flex-column align-items-center gap-1" for="recuTypeExamen" style="font-size:.85rem">
+                  <i class="fas fa-file-alt fa-lg"></i>Examen
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sélection apprenant -->
           <div class="mb-3">
-            <label class="form-label fw-600">Étudiant <span class="text-danger">*</span></label>
+            <label class="form-label fw-bold">Apprenant <span class="text-danger">*</span></label>
             <div class="custom-student-select position-relative" id="recuStudentWrap">
               <div class="input-group">
                 <span class="input-group-text bg-white border-end-0"><i class="fas fa-user-graduate text-primary" style="font-size:.85rem"></i></span>
                 <input type="text" id="recuStudentDisplay" class="form-control border-start-0 border-end-0"
-                       placeholder="Cliquer pour sélectionner un étudiant..." readonly style="cursor:pointer;background:#fff">
+                       placeholder="Cliquer pour sélectionner un apprenant..." readonly style="cursor:pointer;background:#fff">
                 <button type="button" id="recuStudentClear" class="btn btn-outline-secondary border-start-0" style="display:none" title="Effacer">
                   <i class="fas fa-times"></i>
                 </button>
               </div>
               <input type="hidden" name="etudiant_id" id="recuStudentHidden" value="">
 
-              <!-- Dropdown panel -->
               <div id="recuStudentPanel" class="card shadow position-absolute w-100" style="display:none;z-index:1055;top:calc(100% + 4px)">
                 <div class="p-2 border-bottom">
                   <div class="input-group input-group-sm">
@@ -685,62 +713,60 @@ include APP_ROOT . '/includes/header.php';
                     <input type="text" id="recuStudentFilter" class="form-control" placeholder="Filtrer par nom, prénom ou matricule...">
                   </div>
                 </div>
-                <div id="recuStudentList" style="max-height:220px;overflow-y:auto">
-                  <?php foreach ($allEtudiants as $e): ?>
-                  <div class="stu-opt d-flex align-items-center gap-2 px-3 py-2"
-                       data-id="<?= $e['id'] ?>"
-                       data-label="<?= h($e['prenom'].' '.$e['nom'].' ('.$e['matricule'].')') ?>"
-                       data-search="<?= strtolower(h($e['nom'].' '.$e['prenom'].' '.$e['matricule'])) ?>"
-                       style="cursor:pointer;transition:background .15s">
-                    <div class="avatar-circle" style="background:#1a73e8;width:32px;height:32px;font-size:.7rem;flex-shrink:0">
-                      <?= strtoupper(substr($e['prenom'],0,1).substr($e['nom'],0,1)) ?>
-                    </div>
-                    <div style="min-width:0">
-                      <div class="fw-600 fs-sm text-truncate"><?= h($e['prenom'].' '.$e['nom']) ?></div>
-                      <div style="font-size:.73rem;color:#888">
-                        <code><?= h($e['matricule']) ?></code>
-                        <?php if ($e['filiere_code']): ?>&nbsp;·&nbsp;<?= h($e['filiere_code']) ?><?php endif; ?>
-                        <?php if ($e['niveau_nom']): ?>&nbsp;<?= h($e['niveau_nom']) ?><?php endif; ?>
+                <div id="recuStudentList" style="max-height:200px;overflow-y:auto">
+                  <?php if (empty($allEtudiants)): ?>
+                    <div class="text-center text-muted py-3" style="font-size:.85rem"><i class="fas fa-info-circle me-1"></i>Aucun apprenant actif</div>
+                  <?php else: ?>
+                    <?php foreach ($allEtudiants as $e): ?>
+                    <div class="stu-opt d-flex align-items-center gap-2 px-3 py-2"
+                         data-id="<?= $e['id'] ?>"
+                         data-label="<?= h($e['prenom'].' '.$e['nom'].' ('.$e['matricule'].')') ?>"
+                         data-search="<?= strtolower(h($e['nom'].' '.$e['prenom'].' '.$e['matricule'])) ?>"
+                         style="cursor:pointer;transition:background .15s">
+                      <div class="avatar-circle" style="background:#1a73e8;width:32px;height:32px;font-size:.7rem;flex-shrink:0">
+                        <?= strtoupper(substr($e['prenom'],0,1).substr($e['nom'],0,1)) ?>
+                      </div>
+                      <div style="min-width:0">
+                        <div class="fw-600 fs-sm text-truncate"><?= h($e['prenom'].' '.$e['nom']) ?></div>
+                        <div style="font-size:.73rem;color:#888">
+                          <code><?= h($e['matricule']) ?></code>
+                          <?php if ($e['filiere_code']): ?>&nbsp;·&nbsp;<?= h($e['filiere_code']) ?><?php endif; ?>
+                          <?php if ($e['niveau_nom']): ?>&nbsp;<?= h($e['niveau_nom']) ?><?php endif; ?>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <?php endforeach; ?>
-                  <div id="recuNoResult" class="text-center text-muted py-3 d-none">
-                    <i class="fas fa-search-minus d-block mb-1"></i>Aucun résultat
-                  </div>
+                    <?php endforeach; ?>
+                    <div id="recuNoResult" class="text-center text-muted py-3 d-none" style="font-size:.85rem">
+                      <i class="fas fa-search-minus d-block mb-1"></i>Aucun résultat
+                    </div>
+                  <?php endif; ?>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Payment fields -->
-          <div class="mb-3">
-            <label class="form-label fw-600">Libellé <span class="text-danger">*</span></label>
-            <select name="libelle" id="libelleSelect" class="form-select">
-              <option value="">-- Sélectionner --</option>
-              <?php foreach ($typesFrais as $tf): ?>
-                <option value="<?= h($tf['nom']) ?>" data-montant="<?= (float)$tf['montant_defaut'] ?>"><?= h($tf['nom']) ?></option>
-              <?php endforeach; ?>
-              <option value="autre">Autre (saisie libre)</option>
-            </select>
-            <input type="text" name="libelle_custom" id="libelleCustom" class="form-control mt-2" placeholder="Saisir le libellé..." style="display:none">
-          </div>
-
+          <!-- Montants et détails -->
           <div class="row g-3">
             <div class="col-6">
-              <label class="form-label fw-600">Montant dû <span class="text-danger">*</span></label>
-              <input type="number" name="montant" id="montantDu" class="form-control" min="0" required placeholder="0">
+              <label class="form-label fw-bold">Montant dû <span class="text-danger">*</span></label>
+              <div class="input-group">
+                <input type="number" name="montant" id="recuMontantDu" class="form-control" min="0" required placeholder="0">
+                <span class="input-group-text text-muted" style="font-size:.8rem">FCFA</span>
+              </div>
             </div>
             <div class="col-6">
-              <label class="form-label fw-600">Montant versé</label>
-              <input type="number" name="montant_paye" id="montantVerse" class="form-control" min="0" value="0" placeholder="0">
+              <label class="form-label fw-bold">Montant versé <span class="text-danger">*</span></label>
+              <div class="input-group">
+                <input type="number" name="montant_paye" id="recuMontantVerse" class="form-control" min="0" placeholder="0" value="0">
+                <span class="input-group-text text-muted" style="font-size:.8rem">FCFA</span>
+              </div>
             </div>
             <div class="col-6">
-              <label class="form-label fw-600">Date du versement</label>
-              <input type="date" name="date_paiement" class="form-control" value="<?= date('Y-m-d') ?>">
+              <label class="form-label fw-bold">Date du versement</label>
+              <input type="date" name="date_recette" class="form-control" value="<?= date('Y-m-d') ?>">
             </div>
             <div class="col-6">
-              <label class="form-label fw-600">Mode de paiement</label>
+              <label class="form-label fw-bold">Mode de paiement</label>
               <select name="mode_paiement" class="form-select">
                 <option value="especes">Espèces</option>
                 <option value="cheque">Chèque</option>
@@ -749,11 +775,11 @@ include APP_ROOT . '/includes/header.php';
               </select>
             </div>
             <div class="col-6">
-              <label class="form-label fw-600">Référence</label>
-              <input type="text" name="reference" class="form-control" placeholder="N° chèque, transaction...">
+              <label class="form-label fw-bold">Référence</label>
+              <input type="text" name="reference" class="form-control" placeholder="N° chèque, transaction…">
             </div>
             <div class="col-6">
-              <label class="form-label fw-600">Année académique</label>
+              <label class="form-label fw-bold">Année académique</label>
               <select name="annee_id" class="form-select">
                 <?php foreach ($annees as $a): ?>
                   <option value="<?= $a['id'] ?>" <?= ($a['id'] == ($anneeActive['id'] ?? 0)) ? 'selected' : '' ?>><?= h($a['libelle']) ?></option>
@@ -762,15 +788,14 @@ include APP_ROOT . '/includes/header.php';
             </div>
           </div>
 
-          <!-- Preview: auto receipt number notice -->
           <div class="alert alert-info mt-3 py-2 mb-0" style="font-size:.83rem">
-            <i class="fas fa-info-circle me-1"></i>
-            Le numéro de reçu sera généré automatiquement après l'enregistrement.
+            <i class="fas fa-print me-1"></i>
+            Le reçu sera généré et imprimé automatiquement après l'enregistrement.
           </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-light" data-bs-dismiss="modal">Annuler</button>
-          <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Enregistrer & Imprimer le reçu</button>
+          <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Enregistrer &amp; Imprimer le reçu</button>
         </div>
       </form>
     </div>
@@ -835,24 +860,16 @@ $extraScripts = <<<JS
   document.addEventListener('click', e => { if (!wrap.contains(e.target)) close(); });
 })();
 
-// ===== Libellé toggle =====
-const libelleSelect = document.getElementById('libelleSelect');
-const libelleCustom = document.getElementById('libelleCustom');
-const montantDu     = document.getElementById('montantDu');
-if (libelleSelect) {
-  libelleSelect.addEventListener('change', function() {
-    const isAutre = this.value === 'autre';
-    libelleCustom.style.display = isAutre ? '' : 'none';
-    const def = this.options[this.selectedIndex]?.dataset?.montant;
-    if (def && parseFloat(def) > 0) montantDu.value = def;
-  });
-}
-
-// Auto-fill montant_paye = montant when user clicks "full payment" shortcut
-document.getElementById('montantDu')?.addEventListener('blur', function() {
-  const vInput = document.getElementById('montantVerse');
-  if (vInput && !parseFloat(vInput.value)) vInput.value = this.value;
-});
+// Auto-fill montant_paye when montant_du loses focus
+(function () {
+  var du    = document.getElementById('recuMontantDu');
+  var verse = document.getElementById('recuMontantVerse');
+  if (du && verse) {
+    du.addEventListener('blur', function () {
+      if (!parseFloat(verse.value)) verse.value = this.value;
+    });
+  }
+})();
 </script>
 JS;
 
