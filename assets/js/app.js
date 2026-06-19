@@ -37,9 +37,13 @@ if (filiereSelect && niveauSelect) {
       niveauSelect.innerHTML = '<option value="">-- Sélectionner une filière d\'abord --</option>';
       return;
     }
-    fetch('/SCO-EPSI/api/niveaux.php?filiere_id=' + filiereId)
-      .then(r => r.json())
+    fetch(window.APP_URL + '/api/niveaux.php?filiere_id=' + filiereId)
+      .then(r => {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
       .then(data => {
+        if (data.error) throw new Error(data.error + ': ' + (data.message || ''));
         niveauSelect.innerHTML = '<option value="">-- Sélectionner un niveau --</option>';
         data.forEach(n => {
           const opt = document.createElement('option');
@@ -48,7 +52,8 @@ if (filiereSelect && niveauSelect) {
           niveauSelect.appendChild(opt);
         });
       })
-      .catch(() => {
+      .catch(err => {
+        console.error('[Niveaux] Erreur:', err, '| URL:', window.APP_URL + '/api/niveaux.php?filiere_id=' + filiereId);
         niveauSelect.innerHTML = '<option value="">Erreur de chargement</option>';
       });
   });
@@ -65,7 +70,7 @@ if (anneeSelect && semestreSelect) {
       semestreSelect.innerHTML = '<option value="">-- Sélectionner une année d\'abord --</option>';
       return;
     }
-    fetch('/SCO-EPSI/api/semestres.php?annee_id=' + anneeId)
+    fetch(window.APP_URL + '/api/semestres.php?annee_id=' + anneeId)
       .then(r => r.json())
       .then(data => {
         semestreSelect.innerHTML = '<option value="">-- Sélectionner un semestre --</option>';

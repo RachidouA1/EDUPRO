@@ -45,14 +45,17 @@ CREATE TABLE IF NOT EXISTS users (
 -- FILIÈRES
 -- ════════════════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS filieres (
-    id           INT PRIMARY KEY AUTO_INCREMENT,
-    ecole_id     INT          NOT NULL,
-    code         VARCHAR(20)  NOT NULL,
-    nom          VARCHAR(200) NOT NULL,
-    description  TEXT,
-    duree_annees INT          NOT NULL DEFAULT 3,
-    actif        TINYINT(1)   DEFAULT 1,
-    created_at   TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    id               INT PRIMARY KEY AUTO_INCREMENT,
+    ecole_id         INT          NOT NULL,
+    code             VARCHAR(20)  NOT NULL,
+    nom              VARCHAR(200) NOT NULL,
+    description      TEXT,
+    duree_annees     INT          NOT NULL DEFAULT 3,
+    tronc_commun     TINYINT(1)   NOT NULL DEFAULT 0,
+    tronc_commun_id  INT          NULL DEFAULT NULL,
+    niveau_superieur TINYINT(1)   NOT NULL DEFAULT 0,
+    actif            TINYINT(1)   DEFAULT 1,
+    created_at       TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_code_ecole (code, ecole_id),
     INDEX idx_ecole_id (ecole_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

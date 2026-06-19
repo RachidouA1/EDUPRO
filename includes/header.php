@@ -41,6 +41,7 @@ $csrf = generateCsrfToken();
     .badge.bg-primary { background-color: <?= $themePrimary ?> !important; }
   </style>
   <?php if (isset($extraHead)) echo $extraHead; ?>
+  <script>window.APP_URL = '<?= APP_URL ?>';</script>
 </head>
 <body>
 <div class="wrapper">

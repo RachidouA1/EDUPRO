@@ -397,7 +397,7 @@ body { background: linear-gradient(135deg, #0f2d5c, #1a4a8a); min-height: 100vh;
         Mot de passe : <code>Admin@2025</code><br>
         <small class="text-muted">Changez le mot de passe après la première connexion.</small>
       </div>
-      <a href="/SCO-EPSI/index.php" class="btn btn-primary w-100 mt-2">
+      <a href="/EDUPRO/index.php" class="btn btn-primary w-100 mt-2">
         <i class="fas fa-sign-in-alt me-2"></i>Se connecter
       </a>
     <?php endif; ?>

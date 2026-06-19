@@ -135,7 +135,7 @@ body { background: linear-gradient(135deg, #0f2d5c, #1a4a8a); min-height:100vh; 
           <span class="role-badge" style="background:<?= $c['color'] ?>;color:#fff"><?= $c['label'] ?></span>
         </div>
         <?php endforeach; ?>
-        <a href="/SCO-EPSI/index.php" class="btn btn-primary w-100 mt-3">
+        <a href="/EDUPRO/index.php" class="btn btn-primary w-100 mt-3">
           <i class="fas fa-sign-in-alt me-2"></i>Se connecter
         </a>
       <?php endif; ?>

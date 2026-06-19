@@ -312,6 +312,6 @@ foreach ($src->query("SELECT * FROM notes ORDER BY id") as $n) {
     <?php endforeach; ?>
   </div>
 
-  <a href="/SCO-EPSI/dashboard.php" class="btn">← Retour au tableau de bord</a>
+  <a href="/EDUPRO/dashboard.php" class="btn">← Retour au tableau de bord</a>
 </body>
 </html>

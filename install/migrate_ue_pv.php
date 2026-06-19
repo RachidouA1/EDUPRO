@@ -123,7 +123,7 @@ try {
                     <strong>Migration terminée !</strong><br>
                     Les modules <strong>UE</strong> et <strong>PV Supérieur</strong> sont maintenant disponibles.
                 </div>
-                <a href="/SCO-EPSI/dashboard.php" class="btn btn-primary">
+                <a href="/EDUPRO/dashboard.php" class="btn btn-primary">
                     <i class="fas fa-tachometer-alt me-2"></i>Retour au tableau de bord
                 </a>
             <?php endif; ?>
