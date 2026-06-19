@@ -25,6 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'Jeton de sécurité invalide.';
     } else {
         $data = [
+            'matricule'         => strtoupper(sanitize($_POST['matricule']         ?? '')),
             'nom'               => sanitize($_POST['nom']               ?? ''),
             'prenom'            => sanitize($_POST['prenom']            ?? ''),
             'sexe'              => in_array($_POST['sexe'] ?? '', ['M','F']) ? $_POST['sexe'] : '',
@@ -41,9 +42,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'statut'            => in_array($_POST['statut'] ?? '', ['actif','transfere','exclu','diplome']) ? $_POST['statut'] : 'actif',
         ];
 
-        if (empty($data['nom']))    $errors[] = 'Le nom est obligatoire.';
-        if (empty($data['prenom'])) $errors[] = 'Le prénom est obligatoire.';
-        if (empty($data['sexe']))   $errors[] = 'Le sexe est obligatoire.';
+        if (empty($data['matricule'])) $errors[] = 'Le matricule est obligatoire.';
+        if (empty($data['nom']))       $errors[] = 'Le nom est obligatoire.';
+        if (empty($data['prenom']))    $errors[] = 'Le prénom est obligatoire.';
+        if (empty($data['sexe']))      $errors[] = 'Le sexe est obligatoire.';
+
+        // Vérifier l'unicité du matricule (en excluant l'étudiant courant)
+        if (!empty($data['matricule']) && $data['matricule'] !== strtoupper($etudiant['matricule'])) {
+            $chk = $db->prepare("SELECT id FROM etudiants WHERE matricule = ? AND id != ?");
+            $chk->execute([$data['matricule'], $id]);
+            if ($chk->fetch()) $errors[] = 'Ce matricule est déjà utilisé par un autre étudiant.';
+        }
 
         // Gestion photo
         $photoFile    = $_FILES['photo'] ?? null;
@@ -95,12 +104,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $stmt = $db->prepare("
                 UPDATE etudiants SET
-                    nom=?, prenom=?, sexe=?, date_naissance=?, lieu_naissance=?,
+                    matricule=?, nom=?, prenom=?, sexe=?, date_naissance=?, lieu_naissance=?,
                     telephone=?, email=?, adresse=?, nom_tuteur=?, telephone_tuteur=?,
                     filiere_id=?, niveau_id=?, annee_id=?, statut=?, photo=?
                 WHERE id=?
             ");
             $stmt->execute([
+                $data['matricule'],
                 $data['nom'], $data['prenom'], $data['sexe'],
                 $data['date_naissance'] ?: null, $data['lieu_naissance'] ?: null,
                 $data['telephone'] ?: null, $data['email'] ?: null,
@@ -304,8 +314,14 @@ include APP_ROOT . '/includes/header.php';
               <?php endforeach; ?>
             </select>
           </div>
-          <div class="alert alert-info py-2 fs-sm mb-0">
-            <i class="fas fa-id-badge me-2"></i>Matricule : <strong><?= h($etudiant['matricule']) ?></strong>
+          <div class="mb-0">
+            <label class="form-label">Matricule <span class="text-danger">*</span></label>
+            <input type="text" name="matricule" class="form-control"
+                   value="<?= h($_POST['matricule'] ?? $etudiant['matricule']) ?>"
+                   style="text-transform:uppercase"
+                   oninput="this.value=this.value.toUpperCase()"
+                   required>
+            <div class="form-text">Modifiable — doit être unique.</div>
           </div>
         </div>
       </div>

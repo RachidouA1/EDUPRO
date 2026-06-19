@@ -140,7 +140,7 @@ if (!empty($filieres)) {
 $etudiants    = [];
 $canShowList  = $selFil && $selNiv;
 if ($canShowList) {
-    $ew = ['e.actif=1', 'e.filiere_id=?', 'e.niveau_id=?'];
+    $ew = ["e.statut='actif'", 'e.filiere_id=?', 'e.niveau_id=?'];
     $ep = [$selFil, $selNiv];
     if ($ecoleId > 0) { $ew[] = 'e.ecole_id=?'; $ep[] = $ecoleId; }
     $es = $db->prepare("SELECT e.id, e.nom, e.prenom, e.matricule, e.sexe

@@ -3,7 +3,6 @@ require_once __DIR__ . '/../config/config.php';
 
 header('Content-Type: application/json');
 
-// Pour les appels AJAX, retourner du JSON au lieu de rediriger
 if (!isLoggedIn()) {
     http_response_code(401);
     echo json_encode(['error' => 'non_connecte']);
@@ -21,13 +20,10 @@ try {
     $db      = getDB();
     $ecoleId = getEcoleId();
 
-    // S'assurer que les colonnes existent (ajoutées progressivement, absentes sur Docker au premier démarrage)
     try { $db->exec("ALTER TABLE filieres ADD COLUMN tronc_commun TINYINT(1) NOT NULL DEFAULT 0"); } catch (PDOException $e) {}
     try { $db->exec("ALTER TABLE filieres ADD COLUMN tronc_commun_id INT NULL DEFAULT NULL"); } catch (PDOException $e) {}
     try { $db->exec("ALTER TABLE filieres ADD COLUMN niveau_superieur TINYINT(1) NOT NULL DEFAULT 0"); } catch (PDOException $e) {}
 
-    // INF et SF ont un tronc_commun_id : les étudiants entrent directement en Année 2
-    // Also verify filière belongs to current school (prevents cross-school data leakage)
     $fSql    = "SELECT tronc_commun_id FROM filieres WHERE id = ?";
     $fParams = [$filiereId];
     if ($ecoleId > 0) { $fSql .= " AND ecole_id = ?"; $fParams[] = $ecoleId; }
