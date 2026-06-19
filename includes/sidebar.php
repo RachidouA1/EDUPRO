@@ -194,6 +194,7 @@ HTML;
       . '<a href="' . APP_URL . '/modules/comptabilite/depenses.php" class="nav-link' . isActive('/comptabilite/depenses') . '"><i class="fas fa-arrow-circle-up" style="color:#ea4335"></i> Dépenses</a>'
       . '<a href="' . APP_URL . '/modules/comptabilite/rapports.php" class="nav-link' . isActive('/comptabilite/rapports') . '"><i class="fas fa-chart-bar"></i> Rapports financiers</a>'
       . '<a href="' . APP_URL . '/modules/comptabilite/recu.php" class="nav-link' . isActive('/comptabilite/recu') . '"><i class="fas fa-receipt"></i> Reçus de paiement</a>'
+      . '<a href="' . APP_URL . '/modules/comptabilite/impayes.php" class="nav-link' . isActive('/comptabilite/impayes') . '"><i class="fas fa-exclamation-triangle" style="color:#f57c00"></i> Impayés</a>'
     ) ?>
 
     <!-- ===== DIRECTEUR ===== -->
@@ -279,6 +280,7 @@ HTML;
       . '<a href="' . APP_URL . '/modules/comptabilite/depenses.php" class="nav-link' . isActive('/comptabilite/depenses') . '"><i class="fas fa-arrow-circle-up" style="color:#ea4335"></i> Dépenses</a>'
       . '<a href="' . APP_URL . '/modules/comptabilite/rapports.php" class="nav-link' . isActive('/comptabilite/rapports') . '"><i class="fas fa-chart-bar"></i> Rapports financiers</a>'
       . '<a href="' . APP_URL . '/modules/comptabilite/recu.php" class="nav-link' . isActive('/comptabilite/recu') . '"><i class="fas fa-receipt"></i> Reçus de paiement</a>'
+      . '<a href="' . APP_URL . '/modules/comptabilite/impayes.php" class="nav-link' . isActive('/comptabilite/impayes') . '"><i class="fas fa-exclamation-triangle" style="color:#f57c00"></i> Impayés</a>'
     ) ?>
 
     <?php

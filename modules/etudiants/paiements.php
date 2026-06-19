@@ -55,18 +55,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add' 
     if (!verifyCsrfToken($_POST['csrf'] ?? '')) {
         $errors[] = 'Jeton invalide.';
     } else {
-        $libelleSelect = sanitize($_POST['libelle']        ?? '');
-        $libelleCustom = sanitize($_POST['libelle_custom'] ?? '');
-        $libelle       = ($libelleSelect === 'autre' && $libelleCustom !== '') ? $libelleCustom : $libelleSelect;
-        $montant       = (float)($_POST['montant']         ?? 0);
-        $montantPaye   = (float)($_POST['montant_paye']    ?? 0);
-        $datePay       = sanitize($_POST['date_paiement']  ?? date('Y-m-d'));
-        $mode          = sanitize($_POST['mode_paiement']  ?? 'especes');
-        $reference     = sanitize($_POST['reference']      ?? '');
-        $anneeId       = (int)($_POST['annee_id']          ?? 0);
+        $typeFrais   = sanitize($_POST['type_frais']      ?? '');
+        $libellesMap = [
+            'inscription' => "Frais d'inscription",
+            'scolarite'   => 'Frais de formation',
+            'examen'      => "Frais d'examen",
+        ];
+        $libelle     = $libellesMap[$typeFrais] ?? '';
+        $montant     = (float)($_POST['montant']         ?? 0);
+        $montantPaye = (float)($_POST['montant_paye']    ?? 0);
+        $datePay     = sanitize($_POST['date_paiement']  ?? date('Y-m-d'));
+        $mode        = sanitize($_POST['mode_paiement']  ?? 'especes');
+        $reference   = sanitize($_POST['reference']      ?? '');
+        $anneeId     = (int)($_POST['annee_id']          ?? 0);
 
         if (empty($libelle) || $montant <= 0) {
-            $errors[] = 'Libellé et montant obligatoires.';
+            $errors[] = 'Sélectionnez un type de frais et saisissez le montant dû.';
         } else {
             $statut = 'en_attente';
             if ($montantPaye >= $montant) $statut = 'complet';
@@ -95,8 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add' 
                 }
             }
 
-            setFlash('success', 'Paiement enregistré.');
-            redirect('/modules/etudiants/paiements.php?id=' . $id);
+            redirect('/modules/comptabilite/recu.php?print=' . $newPayId . '&auto_print=1');
         }
     }
 }
@@ -203,20 +206,6 @@ foreach ($allVersements as $v) {
 
 $annees      = getAnneesAcademiques();
 $anneeActive = getActiveAnnee();
-$typesFrais  = $db->query("SELECT * FROM types_frais ORDER BY nom")->fetchAll();
-
-// Paiements partiels par libellé (mode versement dans le modal)
-$partiels = [];
-foreach ($allPaiements as $p) {
-    if ($p['statut'] === 'partiel' && !isset($partiels[$p['libelle']])) {
-        $partiels[$p['libelle']] = [
-            'pay_id'       => (int)$p['id'],
-            'montant'      => (float)$p['montant'],
-            'montant_paye' => (float)$p['montant_paye'],
-            'reste'        => (float)$p['montant'] - (float)$p['montant_paye'],
-        ];
-    }
-}
 
 $pageTitle  = 'Paiements – ' . h($etudiant['prenom'] . ' ' . $etudiant['nom']);
 $breadcrumb = [
@@ -468,10 +457,10 @@ include APP_ROOT . '/includes/header.php';
 
 <!-- ══ MODAL : Nouveau paiement / Versement ══════════════════════════════════ -->
 <div class="modal fade" id="addPayModal" tabindex="-1">
-  <div class="modal-dialog">
+  <div class="modal-dialog modal-lg">
     <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="modalPayTitle"><i class="fas fa-plus me-2"></i>Nouveau paiement</h5>
+      <div class="modal-header" id="modalPayHeader" style="background:rgba(26,115,232,.07);border-bottom:2px solid #1a73e8">
+        <h5 class="modal-title" id="modalPayTitle"><i class="fas fa-graduation-cap me-2 text-primary"></i>Nouveau paiement</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <form method="POST" id="payForm">
@@ -481,54 +470,63 @@ include APP_ROOT . '/includes/header.php';
 
         <div class="modal-body">
 
-          <!-- Alerte versement -->
-          <div id="versementAlert" class="alert alert-info d-flex gap-2 align-items-start mb-3" style="display:none!important">
+          <!-- Alerte versement complémentaire -->
+          <div id="versementAlert" class="alert alert-info d-flex gap-2 align-items-start mb-3" style="display:none">
             <i class="fas fa-info-circle mt-1"></i>
             <div>
-              Un premier versement a déjà été effectué pour ce frais.<br>
               <strong>Montant total dû :</strong> <span id="vMontantTotal"></span><br>
               <strong>Déjà payé :</strong> <span id="vMontantPaye"></span><br>
-              <strong class="text-danger">Montant restant : <span id="vMontantReste"></span></strong>
+              <strong class="text-danger">Reste à payer : <span id="vMontantReste"></span></strong>
             </div>
           </div>
 
-          <!-- Libellé select -->
-          <div class="mb-3" id="libelleBlock">
-            <label class="form-label">Libellé <span class="text-danger">*</span></label>
-            <select name="libelle" id="libelleSelect" class="form-select">
-              <option value="">-- Sélectionner --</option>
-              <?php foreach ($typesFrais as $tf): ?>
-                <option value="<?= h($tf['nom']) ?>"
-                        data-montant="<?= (float)$tf['montant_defaut'] ?>"
-                        data-partiel='<?= isset($partiels[$tf['nom']]) ? json_encode($partiels[$tf['nom']]) : 'null' ?>'>
-                  <?= h($tf['nom']) ?>
-                  <?php if (isset($partiels[$tf['nom']])): ?>
-                    — reste <?= number_format($partiels[$tf['nom']]['reste'], 0, ',', ' ') ?> FCFA
-                  <?php endif; ?>
-                </option>
-              <?php endforeach; ?>
-              <option value="autre" data-montant="" data-partiel="null">Autre...</option>
-            </select>
-            <input type="text" id="libelleCustom" name="libelle_custom" class="form-control mt-2"
-                   placeholder="Saisir le libellé" style="display:none">
+          <!-- Type de frais (mode nouveau paiement) -->
+          <div class="mb-4" id="typeFraisBlock">
+            <label class="form-label fw-bold mb-2">Type de frais <span class="text-danger">*</span></label>
+            <div class="row g-2">
+              <div class="col-4">
+                <input type="radio" class="btn-check" name="type_frais" id="typeInscription" value="inscription" autocomplete="off">
+                <label class="btn btn-outline-primary w-100 py-3 d-flex flex-column align-items-center gap-1" for="typeInscription" style="font-size:.85rem">
+                  <i class="fas fa-id-card fa-lg"></i>Inscription
+                </label>
+              </div>
+              <div class="col-4">
+                <input type="radio" class="btn-check" name="type_frais" id="typeScolarite" value="scolarite" autocomplete="off">
+                <label class="btn btn-outline-primary w-100 py-3 d-flex flex-column align-items-center gap-1" for="typeScolarite" style="font-size:.85rem">
+                  <i class="fas fa-book-open fa-lg"></i>Formation
+                </label>
+              </div>
+              <div class="col-4">
+                <input type="radio" class="btn-check" name="type_frais" id="typeExamen" value="examen" autocomplete="off">
+                <label class="btn btn-outline-primary w-100 py-3 d-flex flex-column align-items-center gap-1" for="typeExamen" style="font-size:.85rem">
+                  <i class="fas fa-file-alt fa-lg"></i>Examen
+                </label>
+              </div>
+            </div>
           </div>
 
-          <!-- Libellé figé (mode versement) -->
+          <!-- Libellé figé (mode versement complémentaire) -->
           <div class="mb-3" id="libelleFigeBlock" style="display:none">
-            <label class="form-label">Libellé</label>
+            <label class="form-label fw-bold">Libellé</label>
             <input type="text" id="libelleFigeText" class="form-control" readonly style="background:#f8f9fa">
           </div>
 
           <div class="row g-3">
             <!-- Montant dû (nouveau paiement) -->
             <div class="col-6" id="montantDuBlock">
-              <label class="form-label">Montant dû <span class="text-danger">*</span></label>
-              <input type="number" name="montant" id="montantDu" class="form-control" min="0" step="any">
+              <label class="form-label fw-bold">Montant dû <span class="text-danger">*</span></label>
+              <div class="input-group">
+                <input type="number" name="montant" id="montantDu" class="form-control" min="0" required placeholder="0">
+                <span class="input-group-text text-muted" style="font-size:.8rem">FCFA</span>
+              </div>
             </div>
-            <!-- Montant payé (nouveau paiement) -->
+            <!-- Montant versé (nouveau paiement) -->
             <div class="col-6" id="montantPayeBlock">
-              <label class="form-label">Montant payé</label>
-              <input type="number" name="montant_paye" id="montantPaye" class="form-control" min="0" step="any" value="0">
+              <label class="form-label fw-bold">Montant versé</label>
+              <div class="input-group">
+                <input type="number" name="montant_paye" id="montantPaye" class="form-control" min="0" placeholder="0" value="0">
+                <span class="input-group-text text-muted" style="font-size:.8rem">FCFA</span>
+              </div>
             </div>
             <!-- Montant à verser (versement complémentaire) -->
             <div class="col-12" id="montantVerseBlock" style="display:none">
@@ -542,12 +540,12 @@ include APP_ROOT . '/includes/header.php';
             </div>
             <!-- Date -->
             <div class="col-6">
-              <label class="form-label">Date</label>
+              <label class="form-label fw-bold">Date du versement</label>
               <input type="date" name="date_paiement" class="form-control" value="<?= date('Y-m-d') ?>">
             </div>
             <!-- Mode -->
             <div class="col-6">
-              <label class="form-label">Mode de paiement</label>
+              <label class="form-label fw-bold">Mode de paiement</label>
               <select name="mode_paiement" class="form-select">
                 <option value="especes">Espèces</option>
                 <option value="cheque">Chèque</option>
@@ -557,12 +555,12 @@ include APP_ROOT . '/includes/header.php';
             </div>
             <!-- Référence -->
             <div class="col-6">
-              <label class="form-label">Référence</label>
-              <input type="text" name="reference" class="form-control" placeholder="N° reçu...">
+              <label class="form-label fw-bold">Référence</label>
+              <input type="text" name="reference" class="form-control" placeholder="N° chèque, transaction…">
             </div>
             <!-- Année -->
             <div class="col-6" id="anneeBlock">
-              <label class="form-label">Année académique</label>
+              <label class="form-label fw-bold">Année académique</label>
               <select name="annee_id" class="form-select">
                 <?php foreach ($annees as $a): ?>
                   <option value="<?= $a['id'] ?>" <?= ($a['id'] == ($anneeActive['id'] ?? 0)) ? 'selected' : '' ?>>
@@ -572,12 +570,19 @@ include APP_ROOT . '/includes/header.php';
               </select>
             </div>
           </div>
+
+          <!-- Alerte auto-impression (mode nouveau paiement) -->
+          <div class="alert alert-info mt-3 py-2 mb-0" id="alertAutoprint" style="font-size:.83rem">
+            <i class="fas fa-print me-1"></i>
+            Le reçu sera généré et imprimé automatiquement après l'enregistrement.
+          </div>
+
         </div>
 
         <div class="modal-footer">
           <button type="button" class="btn btn-light" data-bs-dismiss="modal">Annuler</button>
           <button type="submit" class="btn btn-primary" id="paySubmitBtn">
-            <i class="fas fa-save me-2"></i>Enregistrer
+            <i class="fas fa-save me-1"></i>Enregistrer &amp; Imprimer le reçu
           </button>
         </div>
       </form>
@@ -588,24 +593,17 @@ include APP_ROOT . '/includes/header.php';
 <?php endif; ?>
 
 <script>
-const partiels = <?= json_encode($partiels, JSON_UNESCAPED_UNICODE) ?>;
-
 function formatMontantJS(n) {
   return new Intl.NumberFormat('fr-FR').format(n) + ' FCFA';
 }
 
 // ── Filtrer les versements par paiement_id ───────────────────────────────────
 function filtrerVersements(pid) {
-  // Activer l'onglet versements
   const tabBtn = document.querySelector('[data-bs-target="#tabVersements"]');
   bootstrap.Tab.getOrCreateInstance(tabBtn).show();
-
-  // Filtrer les lignes
   document.querySelectorAll('.versement-row').forEach(tr => {
     tr.style.display = (!pid || tr.dataset.pid == pid) ? '' : 'none';
   });
-
-  // Mettre en avant le bouton filtre actif
   document.querySelectorAll('.filtre-frais').forEach(btn => {
     btn.classList.toggle('btn-primary', btn.dataset.pid == pid);
     btn.classList.toggle('btn-outline-secondary', btn.dataset.pid != pid);
@@ -616,11 +614,11 @@ function filtrerVersements(pid) {
 function setModeVersement(payId, libelle, montant, montantPaye) {
   const reste = montant - montantPaye;
 
-  document.getElementById('libelleBlock').style.display     = 'none';
+  document.getElementById('typeFraisBlock').style.display   = 'none';
   document.getElementById('libelleFigeBlock').style.display = '';
   document.getElementById('libelleFigeText').value          = libelle;
 
-  document.getElementById('versementAlert').style.removeProperty('display');
+  document.getElementById('versementAlert').style.display = '';
   document.getElementById('vMontantTotal').textContent = formatMontantJS(montant);
   document.getElementById('vMontantPaye').textContent  = formatMontantJS(montantPaye);
   document.getElementById('vMontantReste').textContent = formatMontantJS(reste);
@@ -629,18 +627,20 @@ function setModeVersement(payId, libelle, montant, montantPaye) {
   document.getElementById('montantPayeBlock').style.display  = 'none';
   document.getElementById('montantVerseBlock').style.display = '';
   document.getElementById('anneeBlock').style.display        = 'none';
+  document.getElementById('alertAutoprint').style.display    = 'none';
 
   document.getElementById('payAction').value = 'versement';
   document.getElementById('payId').value     = payId;
 
-  document.getElementById('modalPayTitle').innerHTML = '<i class="fas fa-hand-holding-usd me-2"></i>Versement complémentaire';
-  document.getElementById('paySubmitBtn').innerHTML  = '<i class="fas fa-check me-2"></i>Enregistrer le versement';
+  document.getElementById('modalPayHeader').style.background   = 'rgba(25,135,84,.07)';
+  document.getElementById('modalPayHeader').style.borderBottom = '2px solid #198754';
+  document.getElementById('modalPayTitle').innerHTML = '<i class="fas fa-hand-holding-usd me-2 text-success"></i>Versement complémentaire';
+  document.getElementById('paySubmitBtn').innerHTML  = '<i class="fas fa-check me-1"></i>Enregistrer le versement';
   document.getElementById('paySubmitBtn').className  = 'btn btn-success';
 
   document.getElementById('montantDu').removeAttribute('required');
   document.getElementById('montantVerse').setAttribute('required', 'required');
 
-  // Validation en temps réel
   const vi = document.getElementById('montantVerse');
   vi.removeAttribute('max');
   vi._resteMax = reste;
@@ -661,20 +661,24 @@ function setModeVersement(payId, libelle, montant, montantPaye) {
   document.getElementById('resteHint').className   = 'form-text text-muted';
 }
 
+// ── Mode nouveau paiement ────────────────────────────────────────────────────
 function setModeNouveauPaiement() {
-  document.getElementById('libelleBlock').style.display      = '';
+  document.getElementById('typeFraisBlock').style.display    = '';
   document.getElementById('libelleFigeBlock').style.display  = 'none';
   document.getElementById('versementAlert').style.display    = 'none';
   document.getElementById('montantDuBlock').style.display    = '';
   document.getElementById('montantPayeBlock').style.display  = '';
   document.getElementById('montantVerseBlock').style.display = 'none';
   document.getElementById('anneeBlock').style.display        = '';
+  document.getElementById('alertAutoprint').style.display    = '';
 
   document.getElementById('payAction').value = 'add';
   document.getElementById('payId').value     = '';
 
-  document.getElementById('modalPayTitle').innerHTML = '<i class="fas fa-plus me-2"></i>Nouveau paiement';
-  document.getElementById('paySubmitBtn').innerHTML  = '<i class="fas fa-save me-2"></i>Enregistrer';
+  document.getElementById('modalPayHeader').style.background   = 'rgba(26,115,232,.07)';
+  document.getElementById('modalPayHeader').style.borderBottom = '2px solid #1a73e8';
+  document.getElementById('modalPayTitle').innerHTML = '<i class="fas fa-graduation-cap me-2 text-primary"></i>Nouveau paiement';
+  document.getElementById('paySubmitBtn').innerHTML  = '<i class="fas fa-save me-1"></i>Enregistrer &amp; Imprimer le reçu';
   document.getElementById('paySubmitBtn').className  = 'btn btn-primary';
   document.getElementById('paySubmitBtn').disabled   = false;
 
@@ -696,30 +700,21 @@ function ouvrirVersement(payId, libelle, montant, montantPaye) {
 // ── Réinitialiser à la fermeture du modal ────────────────────────────────────
 document.getElementById('addPayModal')?.addEventListener('hidden.bs.modal', function () {
   setModeNouveauPaiement();
-  document.getElementById('libelleSelect').value          = '';
-  document.getElementById('libelleCustom').style.display = 'none';
-  document.getElementById('montantDu').value              = '';
-  document.getElementById('montantPaye').value            = '0';
+  document.querySelectorAll('input[name="type_frais"]').forEach(r => r.checked = false);
+  document.getElementById('montantDu').value   = '';
+  document.getElementById('montantPaye').value = '0';
 });
 
-// ── Changement de libellé dans le select ────────────────────────────────────
-document.getElementById('libelleSelect')?.addEventListener('change', function () {
-  const val     = this.value;
-  const opt     = this.options[this.selectedIndex];
-  const partiel = JSON.parse(opt.getAttribute('data-partiel') || 'null');
-
-  document.getElementById('libelleCustom').style.display = (val === 'autre') ? '' : 'none';
-
-  if (partiel) {
-    setModeVersement(partiel.pay_id, val, partiel.montant, partiel.montant_paye);
-    document.getElementById('libelleBlock').style.display     = '';
-    document.getElementById('libelleFigeBlock').style.display = 'none';
-  } else {
-    setModeNouveauPaiement();
-    const montantDefaut = parseFloat(opt.getAttribute('data-montant') || '0');
-    if (montantDefaut > 0) document.getElementById('montantDu').value = montantDefaut;
+// ── Auto-remplir montant versé quand montant dû perd le focus ───────────────
+(function () {
+  var du    = document.getElementById('montantDu');
+  var verse = document.getElementById('montantPaye');
+  if (du && verse) {
+    du.addEventListener('blur', function () {
+      if (!parseFloat(verse.value)) verse.value = this.value;
+    });
   }
-});
+})();
 </script>
 
 <?php include APP_ROOT . '/includes/footer.php'; ?>
