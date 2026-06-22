@@ -370,17 +370,30 @@ include APP_ROOT . '/includes/header.php';
   <div class="card-header"><strong><?= count($matieres) ?></strong> matière(s)</div>
   <div class="table-responsive">
     <table class="table" id="dataTable">
+      <?php
+        $formuleBadges = [
+            'exam_seul'  => ['label' => 'Examen seul',  'class' => 'bg-secondary'],
+            'pondere'    => ['label' => 'NC 40%+Ex 60%', 'class' => 'bg-primary'],
+            'demi_somme' => ['label' => '(NC+Ex) ÷ 2',  'class' => 'bg-success'],
+        ];
+      ?>
       <thead>
-        <tr><th>Code</th><th>Nom</th><th>Filière / Niveau</th><th>Semestre</th><th>UE</th><th>Seuil</th><th>Coef.</th><th>Actions</th></tr>
+        <tr><th>Code</th><th>Nom &amp; Formule</th><th>Filière / Niveau</th><th>Semestre</th><th>UE</th><th>Seuil</th><th>Coef.</th><th>Actions</th></tr>
       </thead>
       <tbody>
         <?php if (empty($matieres)): ?>
           <tr><td colspan="8" class="text-center py-4 text-muted">Aucune matière</td></tr>
         <?php endif; ?>
-        <?php foreach ($matieres as $m): ?>
+        <?php foreach ($matieres as $m):
+          $fCode  = $m['formule_calcul'] ?? 'exam_seul';
+          $fBadge = $formuleBadges[$fCode] ?? $formuleBadges['exam_seul'];
+        ?>
         <tr>
           <td><code class="fs-sm"><?= h($m['code']) ?></code></td>
-          <td class="fw-600"><?= h($m['nom']) ?></td>
+          <td>
+            <div class="fw-600"><?= h($m['nom']) ?></div>
+            <span class="badge <?= $fBadge['class'] ?> mt-1" style="font-size:.7rem;font-weight:500"><?= $fBadge['label'] ?></span>
+          </td>
           <td class="fs-sm">
             <?= h($m['filiere_code'] ?? '-') ?>
             <?php if ($m['niveau_nom']): ?> / <?= h($m['niveau_nom']) ?><?php endif; ?>
@@ -548,11 +561,13 @@ include APP_ROOT . '/includes/header.php';
               </select>
             </div>
             <div class="col-md-8" id="formule_row_wrap">
-              <label class="form-label">Formule de calcul de la moyenne <small class="text-muted">(UE)</small></label>
-              <select name="formule_calcul" id="f_formule_calcul" class="form-select">
-                <option value="exam_seul" selected>Examen seul (sans CC)</option>
-                <option value="demi_somme">(Note de classe + Examen) ÷ 2 (moyenne simple)</option>
+              <label class="form-label">Formule de calcul de la moyenne</label>
+              <select name="formule_calcul" id="f_formule_calcul" class="form-select" onchange="updateFormulePreview()">
+                <option value="exam_seul" selected>Examen seul (100 %) — sans note de classe</option>
+                <option value="pondere">Note de classe 40 % + Examen 60 %</option>
+                <option value="demi_somme">(Note de classe + Examen) ÷ 2 — moyenne égale</option>
               </select>
+              <div id="formule_preview" class="form-text mt-1"></div>
             </div>
             <div class="col-md-4">
               <label class="form-label">Coefficient</label>
@@ -668,6 +683,18 @@ include APP_ROOT . '/includes/header.php';
 // Codes de filières sans notion de semestre
 const NO_SEMESTRE_CODES = ['ASB', 'VP'];
 
+function updateFormulePreview() {
+  const sel  = document.getElementById('f_formule_calcul');
+  const prev = document.getElementById('formule_preview');
+  if (!sel || !prev) return;
+  const msgs = {
+    'exam_seul':  '<i class="fas fa-file-alt text-secondary me-1"></i>Colonne saisie : <strong>Examen</strong> uniquement',
+    'pondere':    '<i class="fas fa-balance-scale text-primary me-1"></i>Colonnes saisie : <strong>Note de classe</strong> + <strong>Examen</strong> &mdash; Moy = NC×40% + Exam×60%',
+    'demi_somme': '<i class="fas fa-divide text-success me-1"></i>Colonnes saisie : <strong>Note de classe</strong> + <strong>Examen</strong> &mdash; Moy = (NC + Exam) ÷ 2',
+  };
+  prev.innerHTML = msgs[sel.value] || '';
+}
+
 function getSelectedFiliereOpt() {
   const sel = document.getElementById('f_filiere_id');
   return sel.options[sel.selectedIndex] || null;
@@ -729,7 +756,8 @@ function updateSemestreRow() {
   const fmWrap = document.getElementById('formule_row_wrap');
   if (fmWrap) {
     fmWrap.style.display = isNoSem ? 'none' : '';
-    if (isNoSem) document.getElementById('f_formule_calcul').value = 'demi_somme';
+    // ASB/VP = examen seul obligatoirement (pas de note de classe)
+    if (isNoSem) document.getElementById('f_formule_calcul').value = 'exam_seul';
   }
 
   // Verrouiller le champ UE pour ASB / VP
@@ -780,7 +808,7 @@ function setFormMode(mode) {
     if (el) el.value = '';
   });
   const fc = document.getElementById('f_formule_calcul');
-  if (fc) fc.value = 'pondere';
+  if (fc) { fc.value = 'exam_seul'; updateFormulePreview(); }
   const sr = document.getElementById('f_seuil_reussite');
   if (sr) sr.value = '12';
   filterNiveaux(null);
@@ -802,8 +830,15 @@ function editMatiere(m) {
   } else {
     document.getElementById('f_semestre_id').value  = m.semestre_id  || '';
   }
+  // Toujours appliquer la formule APRÈS updateSemestreRow() car ASB/VP peut écraser la valeur
+  const savedFormule = m.formule_calcul || 'exam_seul';
   const fc = document.getElementById('f_formule_calcul');
-  if (fc) fc.value = m.formule_calcul || 'exam_seul';
+  if (fc) {
+    fc.value = savedFormule;
+    // Forcer si la valeur n'a pas changé (option potentiellement absente)
+    if (fc.value !== savedFormule) fc.selectedIndex = 0;
+    updateFormulePreview();
+  }
   const sr = document.getElementById('f_seuil_reussite');
   if (sr) sr.value = m.seuil_reussite ?? '12';
   const ue = document.getElementById('f_ue_id');
@@ -867,7 +902,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('f_semestre_id').value  = fd.semestre_id  || '';
   }
   const fc = document.getElementById('f_formule_calcul');
-  if (fc) fc.value = fd.formule_calcul || 'exam_seul';
+  if (fc) { fc.value = fd.formule_calcul || 'exam_seul'; updateFormulePreview(); }
   const sr = document.getElementById('f_seuil_reussite');
   if (sr) sr.value = fd.seuil_reussite !== undefined ? fd.seuil_reussite : 12;
   const ue = document.getElementById('f_ue_id');

@@ -10,7 +10,7 @@ $user = getCurrentUser();
 
 // Runtime migrations
 try { $db->exec("ALTER TABLE notes    ADD COLUMN session        TINYINT     NOT NULL DEFAULT 1"); } catch (PDOException $e) {}
-try { $db->exec("ALTER TABLE matieres ADD COLUMN formule_calcul VARCHAR(20) NOT NULL DEFAULT 'pondere'"); } catch (PDOException $e) {}
+try { $db->exec("ALTER TABLE matieres ADD COLUMN formule_calcul VARCHAR(20) NOT NULL DEFAULT 'exam_seul'"); } catch (PDOException $e) {}
 try { $db->exec("ALTER TABLE notes MODIFY COLUMN semestre_id INT NULL"); } catch (PDOException $e) {}
 try { $db->exec("ALTER TABLE filieres ADD COLUMN niveau_superieur TINYINT(1) NOT NULL DEFAULT 0"); } catch (PDOException $e) {}
 try { $db->exec("UPDATE filieres SET niveau_superieur=1 WHERE tronc_commun=1 OR tronc_commun_id IS NOT NULL"); } catch (PDOException $e) {}
@@ -321,10 +321,24 @@ include APP_ROOT . '/includes/header.php';
     </div>
     <?php endif; ?>
   </div>
-  <?php if (!$canEdit && $selectedMatiere): ?>
-  <button type="button" class="btn btn-outline-secondary" onclick="window.print()">
-    <i class="fas fa-print me-2"></i>Imprimer le PV
-  </button>
+  <?php if ($selectedMatiere && !empty($etudiants)): ?>
+  <div class="d-flex gap-2">
+    <button type="button" class="btn btn-outline-secondary" onclick="window.print()">
+      <i class="fas fa-print me-2"></i>Imprimer le PV
+    </button>
+    <?php
+      $topExportParams = http_build_query(array_filter([
+          'annee_id'    => $anneeId,
+          'semestre_id' => $semestreId ?: '',
+          'matiere_id'  => $matiereId,
+          'session'     => $sessionNum,
+      ]));
+    ?>
+    <a href="<?= h(APP_URL . '/modules/pedagogique/export_notes_excel.php?' . $topExportParams) ?>"
+       class="btn btn-success">
+      <i class="fas fa-file-excel me-2"></i>Exporter Excel
+    </a>
+  </div>
   <?php endif; ?>
 </div>
 
@@ -576,9 +590,9 @@ document.addEventListener('DOMContentLoaded', function () {
   $showS1Ref = ($sessionNum === 2);
 
   $formuleDefs = [
-      'exam_seul'  => ['label' => 'Examen seul (100 %)',         'html' => '<strong>Examen seul</strong> (100 %)',                          'showCC' => false, 'ccPct' => '',      'examPct' => '100 %'],
-      'pondere'    => ['label' => 'CC 40 % + Examen 60 %',       'html' => '<strong>CC</strong> 40 % + <strong>Examen</strong> 60 %',        'showCC' => true,  'ccPct' => '40 %',  'examPct' => '60 %'],
-      'demi_somme' => ['label' => '(CC + Examen) ÷ 2',           'html' => '<strong>(CC + Examen)</strong> ÷ 2',                            'showCC' => true,  'ccPct' => '50 %',  'examPct' => '50 %'],
+      'exam_seul'  => ['label' => 'Examen seul (100 %)',                     'html' => '<strong>Examen seul</strong> (100 %)',                                              'showCC' => false, 'ccPct' => '',      'examPct' => '100 %'],
+      'pondere'    => ['label' => 'Note de classe 40 % + Examen 60 %',       'html' => '<strong>Note de classe</strong> 40 % + <strong>Examen</strong> 60 %',              'showCC' => true,  'ccPct' => '40 %',  'examPct' => '60 %'],
+      'demi_somme' => ['label' => '(Note de classe + Examen) ÷ 2',           'html' => '<strong>(Note de classe + Examen)</strong> ÷ 2',                                  'showCC' => true,  'ccPct' => '50 %',  'examPct' => '50 %'],
   ];
   $fd               = $formuleDefs[$activeFormule] ?? $formuleDefs['exam_seul'];
   $formuleLabel     = $fd['label'];
@@ -590,15 +604,24 @@ document.addEventListener('DOMContentLoaded', function () {
 
 <!-- ══════════════════ PRINT-ONLY PV ══════════════════ -->
 <div class="print-only">
-  <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:.6rem;margin-bottom:.8rem">
-    <?php $pvLogo = getLogoUrl(); if ($pvLogo): ?>
-      <img src="<?= h($pvLogo) ?>" alt="Logo" style="height:60px;object-fit:contain;margin-bottom:.4rem;display:block;margin-left:auto;margin-right:auto">
-    <?php endif; ?>
-    <div style="font-size:1.3rem;font-weight:700;text-transform:uppercase"><?= h(getParam('etablissement_nom', 'École Privée de Santé Ibn Rochd')) ?></div>
-    <?php $slogan = getParam('etablissement_slogan'); if ($slogan): ?>
-      <div style="font-size:.85rem;color:#555;margin-top:.1rem"><?= h($slogan) ?></div>
-    <?php endif; ?>
-    <div style="font-size:1.1rem;font-weight:600;margin-top:.2rem">PROCÈS-VERBAL DE NOTES — Session <?= $sessionNum ?></div>
+  <?php $pvLogo = getLogoUrl(); ?>
+  <div style="display:flex;align-items:center;border-bottom:2px solid #000;padding-bottom:.6rem;margin-bottom:.8rem;gap:1rem">
+    <!-- Logo à gauche -->
+    <div style="flex-shrink:0;width:80px;text-align:left">
+      <?php if ($pvLogo): ?>
+        <img src="<?= h($pvLogo) ?>" alt="Logo" style="height:70px;width:auto;object-fit:contain;display:block">
+      <?php endif; ?>
+    </div>
+    <!-- Texte centré -->
+    <div style="flex:1;text-align:center">
+      <div style="font-size:1.3rem;font-weight:700;text-transform:uppercase"><?= h(getParam('etablissement_nom', 'École Privée de Santé Ibn Rochd')) ?></div>
+      <?php $slogan = getParam('etablissement_slogan'); if ($slogan): ?>
+        <div style="font-size:.85rem;color:#555;margin-top:.1rem"><?= h($slogan) ?></div>
+      <?php endif; ?>
+      <div style="font-size:1.1rem;font-weight:600;margin-top:.3rem">PROCÈS-VERBAL DE NOTES — Session <?= $sessionNum ?></div>
+    </div>
+    <!-- Espace miroir à droite pour équilibrer -->
+    <div style="flex-shrink:0;width:80px"></div>
   </div>
   <table style="width:100%;border-collapse:collapse;font-size:.9rem;margin-bottom:.8rem">
     <tr>
@@ -640,7 +663,7 @@ document.addEventListener('DOMContentLoaded', function () {
         <th style="border:1px solid #888;padding:.3rem .4rem;text-align:center;background:#f0f0f0;font-weight:700">Moy S1</th>
         <?php endif; ?>
         <?php if ($showCC): ?>
-        <th style="border:1px solid #888;padding:.3rem .4rem;text-align:center">CC /20 <small>(<?= $ccPct ?>)</small></th>
+        <th style="border:1px solid #888;padding:.3rem .4rem;text-align:center">Note de classe /20 <small>(<?= $ccPct ?>)</small></th>
         <?php endif; ?>
         <th style="border:1px solid #888;padding:.3rem .4rem;text-align:center">Examen /20 <small>(<?= $examPct ?>)</small></th>
         <th style="border:1px solid #888;padding:.3rem .4rem;text-align:center;font-weight:700">Moy /20</th>
@@ -696,7 +719,7 @@ document.addEventListener('DOMContentLoaded', function () {
           Session <?= $sessionNum ?><?= $sessionNum === 2 ? ' – Rattrapage' : '' ?>
         </span>
       </div>
-      <div class="d-flex align-items-center gap-3">
+      <div class="d-flex align-items-center gap-2">
         <span class="text-muted fs-sm"><?= count($etudiants) ?> étudiant(s)</span>
         <?php if (!$canEdit): ?>
           <span class="badge bg-warning text-dark"><i class="fas fa-eye me-1"></i>Lecture seule</span>
@@ -705,6 +728,18 @@ document.addEventListener('DOMContentLoaded', function () {
             <i class="fas fa-print me-1"></i>Imprimer le PV
           </button>
         <?php endif; ?>
+        <?php
+          $exportParams = http_build_query(array_filter([
+              'annee_id'    => $anneeId,
+              'semestre_id' => $semestreId ?: '',
+              'matiere_id'  => $matiereId,
+              'session'     => $sessionNum,
+          ]));
+        ?>
+        <a href="<?= h(APP_URL . '/modules/pedagogique/export_notes_excel.php?' . $exportParams) ?>"
+           class="btn btn-sm btn-success">
+          <i class="fas fa-file-excel me-1"></i>Exporter Excel
+        </a>
       </div>
     </div>
   </div>
@@ -765,7 +800,7 @@ document.addEventListener('DOMContentLoaded', function () {
               <th class="text-muted fs-sm"              style="background:#fafafa">Moy S1</th>
               <?php endif; ?>
               <?php if ($showCC): ?>
-              <th class="<?= $showS1Ref ? 'border-start' : '' ?>">CC /20 <small class="text-muted">(<?= $ccPct ?>)</small></th>
+              <th class="<?= $showS1Ref ? 'border-start' : '' ?>">Note de classe /20 <small class="text-muted">(<?= $ccPct ?>)</small></th>
               <?php endif; ?>
               <th class="<?= ($showS1Ref && !$showCC) ? 'border-start' : '' ?>">Examen /20 <small class="text-muted">(<?= $examPct ?>)</small></th>
               <th>Moyenne /20</th>
