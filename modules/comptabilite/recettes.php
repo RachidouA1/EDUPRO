@@ -122,7 +122,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add')
 // ===== POST: Delete =====
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete' && hasRole(['admin', 'comptable'])) {
     if (verifyCsrfToken($_POST['csrf'] ?? '')) {
-        $db->prepare("DELETE FROM recettes WHERE id=?")->execute([(int)$_POST['rec_id']]);
+        if ($ecoleId > 0) {
+            $db->prepare("DELETE FROM recettes WHERE id=? AND ecole_id=?")->execute([(int)$_POST['rec_id'], $ecoleId]);
+        } else {
+            $db->prepare("DELETE FROM recettes WHERE id=?")->execute([(int)$_POST['rec_id']]);
+        }
         setFlash('success', 'Recette supprimée.');
         redirect('/modules/comptabilite/recettes.php');
     }

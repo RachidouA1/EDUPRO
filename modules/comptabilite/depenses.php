@@ -96,12 +96,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
     if (verifyCsrfToken($_POST['csrf'] ?? '')) {
         $depId = (int)$_POST['dep_id'];
         if (in_array($role, ['admin', 'directeur'])) {
-            $db->prepare("DELETE FROM depenses WHERE id=?")->execute([$depId]);
+            if ($ecoleId > 0) {
+                $db->prepare("DELETE FROM depenses WHERE id=? AND ecole_id=?")->execute([$depId, $ecoleId]);
+            } else {
+                $db->prepare("DELETE FROM depenses WHERE id=?")->execute([$depId]);
+            }
             setFlash('success', 'Dépense supprimée.');
         } elseif ($role === 'comptable') {
             // Le comptable ne peut supprimer que ses propres demandes en attente
-            $db->prepare("DELETE FROM depenses WHERE id=? AND created_by=? AND statut='en_attente'")
-               ->execute([$depId, $user['id']]);
+            if ($ecoleId > 0) {
+                $db->prepare("DELETE FROM depenses WHERE id=? AND created_by=? AND statut='en_attente' AND ecole_id=?")
+                   ->execute([$depId, $user['id'], $ecoleId]);
+            } else {
+                $db->prepare("DELETE FROM depenses WHERE id=? AND created_by=? AND statut='en_attente'")
+                   ->execute([$depId, $user['id']]);
+            }
             setFlash('success', 'Demande annulée.');
         }
         redirect('/modules/comptabilite/depenses.php');

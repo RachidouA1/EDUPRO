@@ -53,7 +53,11 @@ if ($action === 'delete' && $id && verifyCsrfToken($_GET['csrf'] ?? '')) {
         $canDel = $chkRow && coordinateurCanAccess((int)$chkRow['filiere_id']);
     }
     if ($canDel) {
-        $db->prepare("DELETE FROM matieres WHERE id=?")->execute([$id]);
+        if ($ecoleId > 0) {
+            $db->prepare("DELETE FROM matieres WHERE id=? AND ecole_id=?")->execute([$id, $ecoleId]);
+        } else {
+            $db->prepare("DELETE FROM matieres WHERE id=?")->execute([$id]);
+        }
         setFlash('success', 'Matière supprimée.');
     }
     redirect('/modules/pedagogique/matieres.php');
@@ -212,7 +216,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ue_action']) && hasRo
 
 // ── UE : delete ───────────────────────────────────────────────────────────────
 if ($action === 'delete_ue' && isset($_GET['ue_id']) && verifyCsrfToken($_GET['csrf'] ?? '')) {
-    $db->prepare("DELETE FROM ue WHERE id=?")->execute([(int)$_GET['ue_id']]);
+    if ($ecoleId > 0) {
+        $db->prepare("DELETE FROM ue WHERE id=? AND ecole_id=?")->execute([(int)$_GET['ue_id'], $ecoleId]);
+    } else {
+        $db->prepare("DELETE FROM ue WHERE id=?")->execute([(int)$_GET['ue_id']]);
+    }
     setFlash('success', 'UE supprimée.');
     redirect('/modules/pedagogique/matieres.php');
 }

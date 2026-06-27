@@ -17,7 +17,11 @@ $filieres = getFilieres();
 if (isset($_GET['action']) && $_GET['action'] === 'delete' && verifyCsrfToken($_GET['csrf'] ?? '')) {
     $delId = (int)$_GET['id'];
     if ($delId !== $user['id']) {
-        $db->prepare("DELETE FROM users WHERE id=?")->execute([$delId]);
+        if ($ecoleId > 0) {
+            $db->prepare("DELETE FROM users WHERE id=? AND ecole_id=?")->execute([$delId, $ecoleId]);
+        } else {
+            $db->prepare("DELETE FROM users WHERE id=?")->execute([$delId]);
+        }
         setFlash('success', 'Utilisateur supprimé.');
     }
     redirect('/modules/administration/utilisateurs.php');
@@ -26,7 +30,11 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && verifyCsrfToken($_
 // Toggle active
 if (isset($_GET['action']) && $_GET['action'] === 'toggle' && verifyCsrfToken($_GET['csrf'] ?? '')) {
     $togId = (int)$_GET['id'];
-    $db->prepare("UPDATE users SET actif = IF(actif=1, 0, 1) WHERE id=? AND id != ?")->execute([$togId, $user['id']]);
+    if ($ecoleId > 0) {
+        $db->prepare("UPDATE users SET actif = IF(actif=1, 0, 1) WHERE id=? AND id != ? AND ecole_id=?")->execute([$togId, $user['id'], $ecoleId]);
+    } else {
+        $db->prepare("UPDATE users SET actif = IF(actif=1, 0, 1) WHERE id=? AND id != ?")->execute([$togId, $user['id']]);
+    }
     setFlash('success', 'Statut mis à jour.');
     redirect('/modules/administration/utilisateurs.php');
 }

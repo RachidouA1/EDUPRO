@@ -55,8 +55,10 @@ function createSemestresForAnnee(PDO $db, int $anneeId, string $type = 'standard
 // Delete annee
 if (isset($_GET['delete_annee']) && isset($_GET['csrf']) && hasRole('admin') && verifyCsrfToken($_GET['csrf'])) {
     $id = (int)$_GET['delete_annee'];
-    $row = $db->prepare("SELECT actif FROM annees_academiques WHERE id=?");
-    $row->execute([$id]);
+    $anneeWhere = $ecoleId > 0 ? "WHERE id=? AND ecole_id=?" : "WHERE id=?";
+    $anneeParams = $ecoleId > 0 ? [$id, $ecoleId] : [$id];
+    $row = $db->prepare("SELECT actif FROM annees_academiques $anneeWhere");
+    $row->execute($anneeParams);
     $ann = $row->fetch();
     if (!$ann) {
         setFlash('error', 'Année introuvable.');
@@ -70,9 +72,13 @@ if (isset($_GET['delete_annee']) && isset($_GET['csrf']) && hasRole('admin') && 
         if ($nbNotes > 0) {
             setFlash('error', "Impossible de supprimer : {$nbNotes} note(s) enregistrée(s) pour cette année.");
         } else {
-            // Supprimer les semestres puis l'année
+            // Supprimer les semestres puis l'année (semestres liés à cette année qui appartient à l'école)
             $db->prepare("DELETE FROM semestres WHERE annee_id=?")->execute([$id]);
-            $db->prepare("DELETE FROM annees_academiques WHERE id=?")->execute([$id]);
+            if ($ecoleId > 0) {
+                $db->prepare("DELETE FROM annees_academiques WHERE id=? AND ecole_id=?")->execute([$id, $ecoleId]);
+            } else {
+                $db->prepare("DELETE FROM annees_academiques WHERE id=?")->execute([$id]);
+            }
             setFlash('success', 'Année académique et ses semestres supprimés.');
         }
     }
@@ -82,6 +88,15 @@ if (isset($_GET['delete_annee']) && isset($_GET['csrf']) && hasRole('admin') && 
 // Delete semestre
 if (isset($_GET['delete_sem']) && isset($_GET['csrf']) && hasRole('admin') && verifyCsrfToken($_GET['csrf'])) {
     $id = (int)$_GET['delete_sem'];
+    // Vérifier que le semestre appartient à une année de cette école
+    if ($ecoleId > 0) {
+        $chkOwn = $db->prepare("SELECT s.id FROM semestres s JOIN annees_academiques a ON a.id=s.annee_id WHERE s.id=? AND a.ecole_id=?");
+        $chkOwn->execute([$id, $ecoleId]);
+        if (!$chkOwn->fetch()) {
+            setFlash('error', 'Semestre introuvable.');
+            redirect('/modules/administration/annees.php');
+        }
+    }
     $chkN = $db->prepare("SELECT COUNT(*) FROM notes WHERE semestre_id=?");
     $chkN->execute([$id]);
     $nbNotes = (int)$chkN->fetchColumn();

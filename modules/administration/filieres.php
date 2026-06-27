@@ -25,14 +25,24 @@ try { $db->exec("CREATE TABLE IF NOT EXISTS classes (
 
 // Delete filiere
 if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id']) && hasRole('admin') && verifyCsrfToken($_GET['csrf'] ?? '')) {
-    $db->prepare("DELETE FROM filieres WHERE id=?")->execute([(int)$_GET['id']]);
+    if ($ecoleId > 0) {
+        $db->prepare("DELETE FROM filieres WHERE id=? AND ecole_id=?")->execute([(int)$_GET['id'], $ecoleId]);
+    } else {
+        $db->prepare("DELETE FROM filieres WHERE id=?")->execute([(int)$_GET['id']]);
+    }
     setFlash('success', 'Filière supprimée.');
     redirect('/modules/administration/filieres.php');
 }
 
 // Delete classe
 if (isset($_GET['action']) && $_GET['action'] === 'delete_classe' && isset($_GET['id']) && hasRole(['admin', 'directeur']) && verifyCsrfToken($_GET['csrf'] ?? '')) {
-    $db->prepare("DELETE FROM classes WHERE id=?")->execute([(int)$_GET['id']]);
+    if ($ecoleId > 0) {
+        // Vérifie que la classe appartient bien à une filière de cette école
+        $db->prepare("DELETE c FROM classes c JOIN filieres f ON f.id=c.filiere_id WHERE c.id=? AND f.ecole_id=?")
+           ->execute([(int)$_GET['id'], $ecoleId]);
+    } else {
+        $db->prepare("DELETE FROM classes WHERE id=?")->execute([(int)$_GET['id']]);
+    }
     setFlash('success', 'Classe supprimée.');
     redirect('/modules/administration/filieres.php');
 }

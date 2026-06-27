@@ -57,6 +57,17 @@ if (hasRole('coordinateur') && !coordinateurCanAccess((int)$slot['edt_filiere_id
     exit;
 }
 
+// Vérifier que le slot appartient bien à l'école de l'utilisateur connecté
+$ecoleId = getEcoleId();
+if ($ecoleId > 0) {
+    $ownChk = $db->prepare("SELECT 1 FROM filieres WHERE id=? AND ecole_id=?");
+    $ownChk->execute([$slot['edt_filiere_id'], $ecoleId]);
+    if (!$ownChk->fetch()) {
+        echo json_encode(['success' => false, 'message' => 'Accès refusé.']);
+        exit;
+    }
+}
+
 if (!$slot['enseignant_id'] || !$slot['matiere_id']) {
     echo json_encode(['success' => false, 'message' => 'Ce créneau n\'a pas d\'enseignant ou de matière assigné.']);
     exit;
@@ -95,6 +106,7 @@ if ($action === 'mark') {
         exit;
     }
 } else {
+    // L'école a déjà été vérifiée ci-dessus via filieres.ecole_id
     $db->prepare("DELETE FROM seances_cours WHERE emploi_slot_id = ?")->execute([$slotId]);
     $done = false;
 }

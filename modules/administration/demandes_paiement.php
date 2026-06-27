@@ -100,9 +100,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'supprimer' && in_array($role, ['coordinateur', 'admin'])) {
         $demandeId = (int)($_POST['demande_id'] ?? 0);
         if ($demandeId) {
-            $where = $role === 'coordinateur' ? "AND coordinateur_id = {$user['id']}" : '';
-            $db->prepare("DELETE FROM demandes_paiement_enseignant
-                          WHERE id=? AND statut='en_attente' {$where}")
+            // Filtrer par école via la table enseignants
+            $ecoleClause = ($ecoleId > 0)
+                ? "AND d.enseignant_id IN (SELECT id FROM enseignants WHERE ecole_id={$ecoleId})"
+                : '';
+            $coordClause = ($role === 'coordinateur') ? "AND d.coordinateur_id = {$user['id']}" : '';
+            $db->prepare("DELETE d FROM demandes_paiement_enseignant d
+                          WHERE d.id=? AND d.statut='en_attente' {$coordClause} {$ecoleClause}")
                ->execute([$demandeId]);
             setFlash('success', 'Demande supprimée.');
         }
