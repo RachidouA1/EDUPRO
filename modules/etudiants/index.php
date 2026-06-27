@@ -129,6 +129,14 @@ $logoPath     = $ecole['logo_path']?? '';
           <?php endforeach; ?>
         </select>
       </div>
+      <div class="col-md-2">
+        <select name="annee_id" class="form-select">
+          <option value="">Toutes années</option>
+          <?php foreach ($annees as $a): ?>
+            <option value="<?= $a['id'] ?>" <?= $anneeId == $a['id'] ? 'selected' : '' ?>><?= h($a['libelle']) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
       <div class="col-6 col-md-2">
         <select name="sexe" class="form-select">
           <option value="">Tous sexes</option>
