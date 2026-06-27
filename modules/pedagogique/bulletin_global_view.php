@@ -93,18 +93,18 @@ if ($isSansSemestre) {
 }
 $matieres = $stmt->fetchAll();
 
-// Étudiants actifs (filtrés par niveau pour les filières sans semestre)
+// Étudiants actifs inscrits pour l'année académique sélectionnée
 if ($isSansSemestre) {
     $stmt = $db->prepare("
         SELECT e.id, e.matricule, e.nom, e.prenom
         FROM etudiants e
-        WHERE e.filiere_id = ? AND e.niveau_id = ? AND e.statut = 'actif'
+        WHERE e.filiere_id = ? AND e.niveau_id = ? AND e.statut = 'actif' AND e.annee_id = ?
         ORDER BY e.nom, e.prenom
     ");
-    $stmt->execute([$filiere_id, $niveau_id]);
+    $stmt->execute([$filiere_id, $niveau_id, $annee_id]);
 } else {
-    $stmt = $db->prepare("SELECT e.id, e.matricule, e.nom, e.prenom FROM etudiants e WHERE e.filiere_id = ? AND e.statut = 'actif' ORDER BY e.nom, e.prenom");
-    $stmt->execute([$filiere_id]);
+    $stmt = $db->prepare("SELECT e.id, e.matricule, e.nom, e.prenom FROM etudiants e WHERE e.filiere_id = ? AND e.statut = 'actif' AND e.annee_id = ? ORDER BY e.nom, e.prenom");
+    $stmt->execute([$filiere_id, $annee_id]);
 }
 $etudiants = $stmt->fetchAll();
 

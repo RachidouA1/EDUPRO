@@ -169,17 +169,19 @@ if (isset($_GET['action']) && $_GET['action'] === 'pv_individuel' && isset($_GET
             $decision_class = 'non-valide';
         }
 
-        // Liste des étudiants pour le panneau "Changer d'étudiant"
+        // Liste des étudiants pour le panneau "Changer d'étudiant" (filtrés par année académique)
         $etudiants_switch = [];
-        if (!empty($filieres_avec_ue)) {
+        if (!empty($filieres_avec_ue) && $annee_id) {
             $ids_f = implode(',', array_map(fn($f) => (int)$f['id'], $filieres_avec_ue));
-            $etudiants_switch = $db->query("
+            $sw_stmt = $db->prepare("
                 SELECT e.id, e.matricule, e.nom, e.prenom, f.nom as filiere_nom, f.code as filiere_code
                 FROM etudiants e
                 JOIN filieres f ON f.id = e.filiere_id
-                WHERE e.filiere_id IN ($ids_f) AND e.statut = 'actif'
+                WHERE e.filiere_id IN ($ids_f) AND e.statut = 'actif' AND e.annee_id = ?
                 ORDER BY e.nom, e.prenom
-            ")->fetchAll();
+            ");
+            $sw_stmt->execute([$annee_id]);
+            $etudiants_switch = $sw_stmt->fetchAll();
         }
 
         include __DIR__ . '/pv_individuel_view.php';
@@ -209,15 +211,15 @@ if (isset($_GET['action']) && $_GET['action'] === 'pv_global' && isset($_GET['fi
     }
 
     if ($filiere) {
-        // Étudiants de la filière, à l'année d'étude correspondante
+        // Étudiants de la filière, à l'année d'étude correspondante, inscrits pour l'année académique sélectionnée
         $stmt = $db->prepare("
             SELECT e.*, n.ordre as annee_etude
             FROM etudiants e
             JOIN niveaux n ON n.id = e.niveau_id
-            WHERE e.filiere_id = ? AND n.ordre = ? AND e.statut = 'actif'
+            WHERE e.filiere_id = ? AND n.ordre = ? AND e.statut = 'actif' AND e.annee_id = ?
             ORDER BY e.nom, e.prenom
         ");
-        $stmt->execute([$filiere_id, $annee_etude]);
+        $stmt->execute([$filiere_id, $annee_etude, $annee_id]);
         $etudiants = $stmt->fetchAll();
 
         // UE du semestre
@@ -361,20 +363,29 @@ if (isset($_GET['action']) && $_GET['action'] === 'pv_global' && isset($_GET['fi
     }
 }
 
+$activeAnnee = getActiveAnnee();
+
 // ── Récupération des étudiants supérieurs (pour le sélecteur individuel) ─────
+// Filtrés par l'année académique active afin de n'afficher que les étudiants de l'année en cours
 $etudiants_sup = [];
 if (!empty($filieres_avec_ue)) {
     $ids = implode(',', array_map(fn($f) => (int)$f['id'], $filieres_avec_ue));
-    $etudiants_sup = $db->query("
+    $sup_where  = "e.filiere_id IN ($ids) AND e.statut = 'actif'";
+    $sup_params = [];
+    if ($activeAnnee) {
+        $sup_where  .= ' AND e.annee_id = ?';
+        $sup_params[] = $activeAnnee['id'];
+    }
+    $sup_stmt = $db->prepare("
         SELECT e.id, e.matricule, e.nom, e.prenom, f.nom as filiere_nom
         FROM etudiants e
         JOIN filieres f ON f.id = e.filiere_id
-        WHERE e.filiere_id IN ($ids) AND e.statut = 'actif'
+        WHERE $sup_where
         ORDER BY e.nom, e.prenom
-    ")->fetchAll();
+    ");
+    $sup_stmt->execute($sup_params);
+    $etudiants_sup = $sup_stmt->fetchAll();
 }
-
-$activeAnnee = getActiveAnnee();
 $pageTitle   = 'PV – Niveau Supérieur';
 $breadcrumb  = ['Pédagogie' => null, 'PV Supérieur' => null];
 include APP_ROOT . '/includes/header.php';
